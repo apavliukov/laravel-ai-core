@@ -78,13 +78,18 @@ final class CatalogTest extends TestCase
         $this->assertNull($this->resolver()->forText(FakeRequestType::Analysis, 'test'));
     }
 
-    public function test_the_classifier_needs_its_row_and_its_key(): void
+    public function test_the_classifier_needs_its_row_its_enabled_provider_and_its_key(): void
     {
         $this->assertNull($this->resolver()->forClassification());
 
         $this->seedAiCatalog(FakeModel::Small);
+        $this->assertNull($this->resolver()->forClassification());
 
+        $this->seedAiCatalog(FakeModel::Small, FakeModel::Classifier);
         $this->assertSame(FakeModel::Classifier, $this->resolver()->forClassification());
+
+        config(['ai.providers.typesafe.key' => '']);
+        $this->assertNull($this->resolver()->forClassification());
     }
 
     private function resolver(): ModelResolver

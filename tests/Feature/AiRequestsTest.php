@@ -9,6 +9,7 @@ use AlexPavliukov\AiCore\Enums\ProcessStatus;
 use AlexPavliukov\AiCore\Events\AiRequestCompleted;
 use AlexPavliukov\AiCore\Events\AiRequestDispatching;
 use AlexPavliukov\AiCore\Events\AiRequestFailed;
+use AlexPavliukov\AiCore\Exceptions\AiMisconfiguredException;
 use AlexPavliukov\AiCore\Execution\AiRequestExecutor;
 use AlexPavliukov\AiCore\Jobs\ProcessAiRequestJob;
 use AlexPavliukov\AiCore\Models\AiModel;
@@ -49,12 +50,26 @@ final class AiRequestsTest extends TestCase
             && str_ends_with($job->userPrompt, "\nBe brief."));
     }
 
-    public function test_nothing_is_dispatched_without_an_active_provider(): void
+    public function test_no_enabled_provider_is_a_misconfiguration_not_a_silent_no_op(): void
     {
         Queue::fake();
 
-        $this->assertNull($this->aiRequests()->dispatch(FakeRequestType::Analysis, $this->subject(), 'Analyze.'));
-        Queue::assertNothingPushed();
+        try {
+            $this->aiRequests()->dispatch(FakeRequestType::Analysis, $this->subject(), 'Analyze.');
+            $this->fail('Nothing enabled must not dispatch quietly.');
+        } catch (AiMisconfiguredException) {
+            Queue::assertNothingPushed();
+            $this->assertSame(0, AiRequest::query()->count());
+        }
+    }
+
+    public function test_enabled_providers_that_cannot_answer_are_a_misconfiguration_too(): void
+    {
+        $this->seedAiCatalog(FakeModel::Large);
+
+        $this->expectException(AiMisconfiguredException::class);
+
+        $this->aiRequests()->run(FakeRequestType::Search, $this->subject(), 'Find.');
     }
 
     public function test_a_listener_that_throws_on_dispatching_stops_the_request_before_its_row(): void
@@ -81,7 +96,7 @@ final class AiRequestsTest extends TestCase
         $response = $this->aiRequests()->run(FakeRequestType::Analysis, $this->subject(), 'Analyze.', ['tone' => 'warm']);
 
         $aiRequest = AiRequest::query()->sole();
-        $this->assertTrue($response?->success);
+        $this->assertTrue($response->success);
         $this->assertSame(ProcessStatus::COMPLETED, $aiRequest->status);
         $this->assertSame([
             'input_tokens' => 1_000_000,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AlexPavliukov\AiCore\Contracts;
 
+use AlexPavliukov\AiCore\Enums\AiCapability;
 use BackedEnum;
 use Laravel\Ai\Enums\Lab;
 
@@ -24,4 +25,13 @@ interface AiProviderContract extends BackedEnum
      * The model a provider falls back to when its active model is retired.
      */
     public function defaultModel(): AiModelContract;
+
+    /**
+     * The providers to try, in order, for requests needing a capability. Only
+     * enabled providers (`is_active`) are ever tried: a disabled one gets no
+     * request, whatever this list says.
+     *
+     * @return list<AiProviderContract>
+     */
+    public static function priority(AiCapability $capability): array;
 }

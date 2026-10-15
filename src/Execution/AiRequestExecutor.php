@@ -85,7 +85,10 @@ final readonly class AiRequestExecutor
 
         if ($this->searchesTheWeb($agent) && ! in_array(AiCapability::WebSearch, $model->capabilities(), true)) {
             return $this->failWith(
-                new AiMisconfiguredException(sprintf('Agent %s searches the web but model %s cannot', $agent::class, $model->value)),
+                new AiMisconfiguredException('This request searches the web, which its model cannot do.', [
+                    'agent' => $agent::class,
+                    'model' => $model->value,
+                ]),
                 $aiRequest,
                 $model,
                 $startedAt,
@@ -109,7 +112,6 @@ final readonly class AiRequestExecutor
         if ($truncated) {
             return $this->fail(
                 $aiRequest,
-                $model,
                 'The answer was cut off before it finished (incomplete: max output tokens).',
                 $this->elapsed($startedAt),
             );
@@ -118,7 +120,7 @@ final readonly class AiRequestExecutor
         $structured = $response instanceof StructuredAgentResponse ? $response->structured : null;
 
         if ($structured !== null && ($rejection = $agent->rejection($structured)) !== null) {
-            return $this->fail($aiRequest, $model, $rejection, $this->elapsed($startedAt));
+            return $this->fail($aiRequest, $rejection, $this->elapsed($startedAt));
         }
 
         // A result the project writes itself is written before the row says
@@ -143,10 +145,8 @@ final readonly class AiRequestExecutor
 
         // A structured answer is stored once, as data; its raw JSON is the
         // same bytes again. Plain-text agents keep the text, their only copy.
-        return $this->complete($aiRequest, new AiResponseDto(
-            success: true,
-            model: $model,
-            text: mb_trim($response->text),
+        return $this->complete(
+            $aiRequest,
             response: [
                 ...($structured === null ? ['text' => $response->text] : ['structured' => $structured]),
                 'meta' => $response->meta->toArray(),
@@ -154,9 +154,7 @@ final readonly class AiRequestExecutor
             usage: [...$response->usage->toArray(), 'web_search_calls' => $webSearchCalls],
             cost: AiCost::of($model, $response->usage, $webSearchCalls),
             responseTime: $this->elapsed($startedAt),
-            aiRequestId: $aiRequest->id,
-            batchId: $aiRequest->batch_id,
-        ));
+        );
     }
 
     /**
@@ -192,9 +190,8 @@ final readonly class AiRequestExecutor
             return null;
         }
 
-        $this->complete($aiRequest, new AiResponseDto(
-            success: true,
-            model: $model,
+        $this->complete(
+            $aiRequest,
             response: [
                 'answers' => array_map(static fn (Answer $answer): array => $answer->toArray(), $response->answers),
                 'meta' => $response->meta->toArray(),
@@ -202,9 +199,7 @@ final readonly class AiRequestExecutor
             usage: $response->usage->toArray(),
             cost: AiCost::of($model, $response->usage),
             responseTime: $this->elapsed($startedAt),
-            aiRequestId: $aiRequest->id,
-            batchId: $aiRequest->batch_id,
-        ));
+        );
 
         return $response;
     }
@@ -223,17 +218,13 @@ final readonly class AiRequestExecutor
         TextUsage $usage,
         int $responseTime,
     ): AiResponseDto {
-        return $this->complete($aiRequest, new AiResponseDto(
-            success: true,
-            model: $model,
-            text: mb_trim($text),
-            response: $response,
+        return $this->complete(
+            $aiRequest,
+            response: $response + ['text' => $text],
             usage: $usage->toArray(),
             cost: AiCost::of($model, $usage),
             responseTime: $responseTime,
-            aiRequestId: $aiRequest->id,
-            batchId: $aiRequest->batch_id,
-        ));
+        );
     }
 
     /**
@@ -243,7 +234,7 @@ final readonly class AiRequestExecutor
     {
         $this->report($exception, $aiRequest, $model);
 
-        return $this->fail($aiRequest, $model, self::publicMessage($exception, $aiRequest), $this->elapsed($startedAt));
+        return $this->fail($aiRequest, self::publicMessage($exception, $aiRequest), $this->elapsed($startedAt));
     }
 
     /**
@@ -267,7 +258,6 @@ final readonly class AiRequestExecutor
      */
     public function fail(
         AiRequest $aiRequest,
-        ?AiModelContract $model,
         string $error,
         ?int $responseTime,
     ): AiResponseDto {
@@ -277,14 +267,7 @@ final readonly class AiRequestExecutor
             'error_message' => $error,
         ]);
 
-        $aiResponse = new AiResponseDto(
-            success: false,
-            model: $model,
-            error: $error,
-            responseTime: $responseTime ?? 0,
-            aiRequestId: $aiRequest->id,
-            batchId: $aiRequest->batch_id,
-        );
+        $aiResponse = AiResponseDto::fromRequest($aiRequest);
 
         event(new AiRequestFailed($aiRequest, $aiResponse));
 
@@ -303,6 +286,7 @@ final readonly class AiRequestExecutor
             'ai_request_id' => $aiRequest->id,
             'request_type' => $aiRequest->request_type->name,
             'model' => $model?->value,
+            ...($exception instanceof AiMisconfiguredException ? $exception->context() : []),
         ]));
     }
 
@@ -326,16 +310,22 @@ final readonly class AiRequestExecutor
         return false;
     }
 
-    private function complete(AiRequest $aiRequest, AiResponseDto $aiResponse): AiResponseDto
+    /**
+     * @param  array<string, mixed>  $response
+     * @param  array<string, mixed>  $usage
+     */
+    private function complete(AiRequest $aiRequest, array $response, array $usage, float $cost, int $responseTime): AiResponseDto
     {
         $aiRequest->update([
             'status' => ProcessStatus::COMPLETED,
-            'response' => $aiResponse->response,
-            'tokens' => $aiResponse->usage,
-            'api_cost' => $aiResponse->cost,
-            'response_time' => $aiResponse->responseTime,
+            'response' => $response,
+            'tokens' => $usage,
+            'api_cost' => $cost,
+            'response_time' => $responseTime,
             'error_message' => null,
         ]);
+
+        $aiResponse = AiResponseDto::fromRequest($aiRequest);
 
         event(new AiRequestCompleted($aiRequest, $aiResponse));
 

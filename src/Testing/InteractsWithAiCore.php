@@ -17,18 +17,21 @@ use Closure;
 trait InteractsWithAiCore
 {
     /**
-     * Sync the catalogue from the enums and make the given model's provider
-     * the active one, with that model active.
+     * Sync the catalogue from the enums and enable the given models'
+     * providers, each with its model as the active one.
      */
-    protected function seedAiCatalog(AiModelContract $activeModel): void
+    protected function seedAiCatalog(AiModelContract ...$activeModels): void
     {
         resolve(SyncAiCatalog::class)();
 
-        $modelId = AiCore::modelModel()::query()->where('name', $activeModel->value)->value('id');
-
-        AiCore::providerModel()::query()
-            ->where('name', $activeModel->provider()->value)
-            ->update(['is_active' => true, 'active_model_id' => $modelId]);
+        foreach ($activeModels as $activeModel) {
+            AiCore::providerModel()::query()
+                ->where('name', $activeModel->provider()->value)
+                ->update([
+                    'is_active' => true,
+                    'active_model_id' => AiCore::modelModel()::query()->where('name', $activeModel->value)->value('id'),
+                ]);
+        }
     }
 
     /**

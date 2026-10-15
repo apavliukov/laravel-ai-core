@@ -48,7 +48,8 @@ core contracts, and register them in `config/ai-core.php`:
 ],
 ```
 
-- `AiProviderContract`: `label()`, `lab()` (the SDK lab), `defaultModel()`.
+- `AiProviderContract`: `label()`, `lab()` (the SDK lab), `defaultModel()`, and
+  `static priority(AiCapability)`: the providers to try, in order, for a capability.
 - `AiModelContract`: `label()`, `pricing()` (dollars per 1M tokens, plus `cache_write`,
   `audio_minute` and `web_search` per 1000 calls where they apply), `capabilities()`,
   `provider()`.
@@ -62,8 +63,15 @@ php artisan ai-core:sync
 ```
 
 New cases appear, removed ones are soft-deleted, and a retired active model is replaced
-by its provider's default. Activating a provider and choosing its active model is left
-to your admin UI.
+by its provider's default. Enabling a provider (`is_active`) and choosing its active model
+is left to your admin UI.
+
+`is_active` is a hard switch: a disabled provider receives no request of any kind. A text
+request runs on the model assigned to its type (when that model's provider is enabled),
+else on the active model of the first enabled provider in `priority(AiCapability::Text)`
+that can do what the type requires. A transcription or a classification runs on the first
+catalogued model with that capability, of the first enabled provider in that
+capability's priority whose API key is set.
 
 ## Agents
 
@@ -102,11 +110,20 @@ $response = $ai->run(AiRequestType::Summary, $subject, $prompt);
 ```
 
 - `dispatch()` opens a pending ledger row and queues the call; it returns the batch id
-  to poll, or null when no provider is active.
+  to poll.
 - `run()` executes in the current process and returns an `AiResponseDto`.
 - `open()`, `record()` and `fail()` cover calls made outside an agent (a transcription).
 - `classify()` and `classificationModel()` run a `Laravel\Ai\Classification`.
-- `textModel()` tells which model a request type would run on.
+- `textModel()` tells which model a request type would run on; `modelFor(AiCapability)`
+  picks the model for a call that needs one capability (a transcription).
+
+No model is an error, never a silent no-op: when no enabled provider can answer, every
+call throws `AiMisconfiguredException` (the exception handler reports it). Use
+`textModel()` / `modelFor()`, which return null, to decide whether to offer an AI action
+at all.
+
+Every call returns an `AiResponseDto`; `AiResponseDto::fromRequest($row)` builds the same
+DTO from a ledger row, e.g. when a poll finds a batch completed.
 
 A custom prompt passed to `dispatch()` or `run()` is appended to the request message under
 `ai-core.custom_prompt_heading`. A result your application writes itself can be applied

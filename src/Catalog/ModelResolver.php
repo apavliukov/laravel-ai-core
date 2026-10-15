@@ -6,12 +6,12 @@ namespace AlexPavliukov\AiCore\Catalog;
 
 use AlexPavliukov\AiCore\AiCore;
 use AlexPavliukov\AiCore\Contracts\AiModelContract;
-use AlexPavliukov\AiCore\Contracts\AiProviderContract;
 use AlexPavliukov\AiCore\Contracts\AiRequestTypeContract;
 use AlexPavliukov\AiCore\Enums\AiCapability;
 use AlexPavliukov\AiCore\Exceptions\AiMisconfiguredException;
 use AlexPavliukov\AiCore\Models\AiProvider;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
 
 final readonly class ModelResolver
@@ -20,24 +20,23 @@ final readonly class ModelResolver
 
     /**
      * The model that answers a request type: the model a platform admin
-     * assigned to the type, else the active provider's active model. Null when
-     * no provider is active, or when the active model cannot do what the type
-     * requires (reported).
+     * assigned to the type, else the active model of the first enabled
+     * provider, in the priority of the type's most specific capability, whose
+     * active model can do what the type requires. Null when no provider is
+     * enabled or none can answer; the caller decides whether that is an error
+     * (AiRequests throws). A disabled provider is never used.
      *
      * @throws AiMisconfiguredException when the assigned model cannot do what the type requires.
      */
     public function forText(AiRequestTypeContract $requestType, string $context): ?AiModelContract
     {
-        $aiProvider = AiCore::providerModel()::query()
-            ->active()
-            ->with('activeModel')
-            ->first();
+        $enabled = $this->enabledProviders();
 
-        if (! $aiProvider instanceof AiProvider) {
+        if ($enabled->isEmpty()) {
             return null;
         }
 
-        $assigned = $this->assignedModel($requestType, $aiProvider, $context);
+        $assigned = $this->assignedModel($requestType, $enabled, $context);
 
         if ($assigned instanceof AiModelContract) {
             if (! $this->canAnswer($assigned, $requestType)) {
@@ -50,56 +49,77 @@ final readonly class ModelResolver
             return $assigned;
         }
 
-        $providerEnum = $aiProvider->getEnum();
-        $modelEnum = $aiProvider->activeModel?->getEnum();
+        foreach (AiCore::providerEnum()::priority($this->priorityCapability($requestType)) as $provider) {
+            $model = $enabled->get($provider->value)?->activeModel?->getEnum();
 
-        if (! $providerEnum instanceof AiProviderContract || ! $modelEnum instanceof AiModelContract || ! $this->canAnswer($modelEnum, $requestType)) {
-            $errorMessage = $modelEnum instanceof AiModelContract
-                ? 'Active model cannot do what the request type requires'
-                : 'Incorrect provider or model enum';
-
-            report(new AiMisconfiguredException($errorMessage, [
-                'context' => $context,
-                'request_type' => $requestType->name,
-                'ai_provider' => $aiProvider->id,
-                'provider_enum' => $providerEnum,
-                'model_enum' => $modelEnum,
-            ]));
-
-            return null;
+            if ($model instanceof AiModelContract && $this->canAnswer($model, $requestType)) {
+                return $model;
+            }
         }
 
-        return $modelEnum;
+        return null;
     }
 
     /**
-     * The model that answers Classifications, or null when classification is
-     * not configured here: its provider has no API key, or its row was never
-     * seeded. Unlike text, nothing is "activated": the one model that can
-     * classify is the one that does.
+     * The model for requests needing one capability (a transcription, a
+     * classification): the first catalogued model with it, of the first
+     * enabled provider in that capability's priority whose API key is set.
+     * Null when none qualifies. A disabled provider is never used.
      */
-    public function forClassification(): ?AiModelContract
+    public function forCapability(AiCapability $capability): ?AiModelContract
     {
         // Asked on every render of a card that offers it and again by the action it calls.
-        return once(static function (): ?AiModelContract {
-            // ponytail: the first classifier wins; choosing a model per capability
-            // or request type arrives when a project has two classifiers.
-            $model = AiCore::modelsWithCapability(AiCapability::Classification)[0] ?? null;
+        return once(function () use ($capability): ?AiModelContract {
+            $enabled = $this->enabledProviders();
 
-            if (! $model instanceof AiModelContract || blank(config("ai.providers.{$model->provider()->value}.key"))) {
-                return null;
+            foreach (AiCore::providerEnum()::priority($capability) as $provider) {
+                $row = $enabled->get($provider->value);
+
+                if (! $row instanceof AiProvider || blank(config("ai.providers.{$provider->value}.key"))) {
+                    continue;
+                }
+
+                $seeded = $row->models->pluck('name')->all();
+                $model = array_find(
+                    AiCore::modelsWithCapability($capability),
+                    static fn (AiModelContract $model): bool => $model->provider() === $provider && in_array($model->value, $seeded, true),
+                );
+
+                if ($model instanceof AiModelContract) {
+                    return $model;
+                }
             }
 
-            return AiCore::modelModel()::query()->where('name', $model->value)->exists() ? $model : null;
+            return null;
         });
     }
 
+    public function forClassification(): ?AiModelContract
+    {
+        return $this->forCapability(AiCapability::Classification);
+    }
+
     /**
-     * The model assigned to the request type, while it is still a seeded model
-     * of the active provider. An assignment to a retired or foreign model is
-     * logged and ignored, so retiring a model never stops generation.
+     * @return Collection<array-key, AiProvider>
      */
-    private function assignedModel(AiRequestTypeContract $requestType, AiProvider $aiProvider, string $context): ?AiModelContract
+    private function enabledProviders(): Collection
+    {
+        /** @var Collection<array-key, AiProvider> */
+        return AiCore::providerModel()::query()
+            ->active()
+            ->with(['activeModel', 'models'])
+            ->get()
+            ->keyBy('name');
+    }
+
+    /**
+     * The model assigned to the request type, while it is a seeded model of an
+     * enabled provider. An assignment to a retired model or to a disabled
+     * provider is logged and ignored, so neither stops generation.
+     *
+     * @param  Collection<array-key, AiProvider>  $enabled
+     */
+    private function assignedModel(AiRequestTypeContract $requestType, Collection $enabled, string $context): ?AiModelContract
     {
         $assigned = $this->container->make(ModelAssignments::class)->assigned($requestType);
 
@@ -108,20 +128,34 @@ final readonly class ModelResolver
         }
 
         $model = AiCore::modelEnum()::tryFrom($assigned);
+        $provider = $model instanceof AiModelContract ? $enabled->get($model->provider()->value) : null;
 
-        if ($model instanceof AiModelContract
-            && $model->provider() === $aiProvider->getEnum()
-            && $aiProvider->loadMissing('models')->models->contains('name', $model->value)) {
+        if ($model instanceof AiModelContract && $provider instanceof AiProvider && $provider->models->contains('name', $model->value)) {
             return $model;
         }
 
-        Log::warning('Assigned model is not in the active catalogue; using the active model', [
+        Log::warning('Assigned model is not in the catalogue of an enabled provider; using the priority', [
             'context' => $context,
             'request_type' => $requestType->name,
             'assigned_model' => $assigned,
         ]);
 
         return null;
+    }
+
+    /**
+     * The capability whose priority a request type walks: its most specific
+     * one (web search over plain text), so a type that searches tries the
+     * providers ranked for searching.
+     */
+    private function priorityCapability(AiRequestTypeContract $requestType): AiCapability
+    {
+        $specific = array_filter(
+            $requestType->requiredCapabilities(),
+            static fn (AiCapability $capability): bool => $capability !== AiCapability::Text,
+        );
+
+        return reset($specific) ?: AiCapability::Text;
     }
 
     private function canAnswer(AiModelContract $model, AiRequestTypeContract $requestType): bool

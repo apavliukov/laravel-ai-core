@@ -34,6 +34,7 @@ abstract class TestCase extends Orchestra
             'request_type' => FakeRequestType::class,
         ]);
         $app['config']->set('ai.providers.typesafe.key', 'test-key');
+        $app['config']->set('ai.providers.openai.key', 'test-key');
     }
 
     protected function defineDatabaseMigrations(): void

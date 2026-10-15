@@ -10,8 +10,10 @@ use AlexPavliukov\AiCore\Contracts\AiModelContract;
 use AlexPavliukov\AiCore\Contracts\AiRequestTypeContract;
 use AlexPavliukov\AiCore\Contracts\AppliesAiResult;
 use AlexPavliukov\AiCore\Dto\AiResponseDto;
+use AlexPavliukov\AiCore\Enums\AiCapability;
 use AlexPavliukov\AiCore\Enums\ProcessStatus;
 use AlexPavliukov\AiCore\Events\AiRequestDispatching;
+use AlexPavliukov\AiCore\Exceptions\AiMisconfiguredException;
 use AlexPavliukov\AiCore\Execution\AiRequestExecutor;
 use AlexPavliukov\AiCore\Jobs\ProcessAiRequestJob;
 use AlexPavliukov\AiCore\Models\AiRequest;
@@ -39,13 +41,15 @@ final readonly class AiRequests
     ) {}
 
     /**
-     * Queue the request and return the batch id to poll, or null when no
-     * provider is configured.
+     * Queue the request and return the batch id to poll.
+     *
      *
      * @param  array<string, mixed>  $agentState
      * @param  class-string<AppliesAiResult>|null  $applier  Writes the result in the worker, before the request reads completed.
      * @param  array<string, mixed>  $applyContext
      * @param  string|null  $batchId  Joins a batch already started, so one poll waits for both requests.
+     *
+     * @throws AiMisconfiguredException when no enabled provider can answer the type.
      */
     public function dispatch(
         AiRequestTypeContract $requestType,
@@ -56,16 +60,12 @@ final readonly class AiRequests
         ?string $applier = null,
         array $applyContext = [],
         ?string $batchId = null,
-    ): ?string {
+    ): string {
         if ($applier !== null && ! is_a($applier, AppliesAiResult::class, true)) {
             throw new InvalidArgumentException("The applier {$applier} must implement ".AppliesAiResult::class.'.');
         }
 
-        $model = $this->textModel($requestType, $requestable);
-
-        if (! $model instanceof AiModelContract) {
-            return null;
-        }
+        $model = $this->requireModel($this->textModel($requestType, $requestable), $requestType->name);
 
         $aiRequest = $this->open($requestable, $model, $requestType, $batchId, $customPrompt);
 
@@ -83,9 +83,12 @@ final readonly class AiRequests
 
     /**
      * Run the request in this process, for callers that already sit on a
-     * queue and need the answer in hand. Null when no provider is configured.
+     * queue and need the answer in hand.
+     *
      *
      * @param  array<string, mixed>  $agentState
+     *
+     * @throws AiMisconfiguredException when no enabled provider can answer the type.
      */
     public function run(
         AiRequestTypeContract $requestType,
@@ -93,12 +96,8 @@ final readonly class AiRequests
         string $userPrompt,
         array $agentState = [],
         ?string $customPrompt = null,
-    ): ?AiResponseDto {
-        $model = $this->textModel($requestType, $requestable);
-
-        if (! $model instanceof AiModelContract) {
-            return null;
-        }
+    ): AiResponseDto {
+        $model = $this->requireModel($this->textModel($requestType, $requestable), $requestType->name);
 
         return $this->executor->execute(
             $this->open($requestable, $model, $requestType, customPrompt: $customPrompt),
@@ -115,12 +114,13 @@ final readonly class AiRequests
      */
     public function open(
         Model $requestable,
-        AiModelContract $model,
+        ?AiModelContract $model,
         AiRequestTypeContract $requestType,
         ?string $batchId = null,
         ?string $customPrompt = null,
         int|string|null $userId = null,
     ): AiRequest {
+        $model = $this->requireModel($model, $requestType->name);
         $userId = AiCore::actor($userId);
 
         if ($batchId !== null) {
@@ -161,9 +161,9 @@ final readonly class AiRequests
      * @param  array<string, mixed>  $state
      * @param  array<string, Question>  $questions
      */
-    public function classify(AiRequest $aiRequest, array $state, array $questions, AiModelContract $model): ?ClassificationResponse
+    public function classify(AiRequest $aiRequest, array $state, array $questions, ?AiModelContract $model): ?ClassificationResponse
     {
-        return $this->executor->classify($aiRequest, $state, $questions, $model);
+        return $this->executor->classify($aiRequest, $state, $questions, $this->requireModel($model, $aiRequest->request_type->name));
     }
 
     /**
@@ -173,19 +173,19 @@ final readonly class AiRequests
      */
     public function record(
         AiRequest $aiRequest,
-        AiModelContract $model,
+        ?AiModelContract $model,
         string $text,
         array $response,
         TextUsage $usage,
         float $startedAt,
     ): AiResponseDto {
-        return $this->executor->record($aiRequest, $model, $text, $response, $usage, $this->executor->elapsed($startedAt));
+        return $this->executor->record($aiRequest, $this->requireModel($model, $aiRequest->request_type->name), $text, $response, $usage, $this->executor->elapsed($startedAt));
     }
 
     /**
      * Report and fail a row opened with {@see open()} whose call threw.
      */
-    public function fail(AiRequest $aiRequest, AiModelContract $model, Throwable $exception, float $startedAt): AiResponseDto
+    public function fail(AiRequest $aiRequest, ?AiModelContract $model, Throwable $exception, float $startedAt): AiResponseDto
     {
         return $this->executor->failWith($exception, $aiRequest, $model, $startedAt);
     }
@@ -200,6 +200,26 @@ final readonly class AiRequests
     public function classificationModel(): ?AiModelContract
     {
         return $this->models->forClassification();
+    }
+
+    /**
+     * The model for a call that needs one capability (a transcription), or null.
+     */
+    public function modelFor(AiCapability $capability): ?AiModelContract
+    {
+        return $this->models->forCapability($capability);
+    }
+
+    /**
+     * No model is a misconfiguration, never a silent no-op: nothing enabled, or
+     * nothing enabled can do what the request needs. Uncaught, the exception
+     * handler reports it.
+     */
+    private function requireModel(?AiModelContract $model, string $requestType): AiModelContract
+    {
+        return $model ?? throw new AiMisconfiguredException("No enabled AI provider has a model for {$requestType}.", [
+            'request_type' => $requestType,
+        ]);
     }
 
     /**

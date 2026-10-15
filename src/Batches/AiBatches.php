@@ -41,7 +41,9 @@ final readonly class AiBatches
             ->where('batch_id', $batchId)
             ->with('model.provider')
             ->get()
-            // What the poll hands to the screen: never the prompts.
+            // The batch is the caller's own, so this is not access control: it
+            // only keeps the prompts out of an accidental toArray()/JSON (a
+            // Livewire property, an API response). The attributes stay readable.
             ->each->makeHidden(['payload', 'custom_prompt']);
 
         $failed = $requests->first(

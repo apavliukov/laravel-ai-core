@@ -88,7 +88,7 @@ final class ProcessAiRequestJob implements ShouldBeEncrypted, ShouldQueue
      */
     public function failed(?Throwable $exception): void
     {
-        $aiRequest = AiCore::requestModel()::query()->with('model')->find($this->aiRequestId);
+        $aiRequest = AiCore::requestModel()::query()->with('model.provider')->find($this->aiRequestId);
 
         if (! $aiRequest instanceof AiRequest || $aiRequest->status->isTerminal()) {
             return;
@@ -96,7 +96,6 @@ final class ProcessAiRequestJob implements ShouldBeEncrypted, ShouldQueue
 
         resolve(AiRequestExecutor::class)->fail(
             $aiRequest,
-            $aiRequest->model?->enumOrFallback(),
             AiRequestExecutor::publicMessage($exception, $aiRequest),
             null,
         );

@@ -9,6 +9,8 @@ The SDK owns the agent API and the transport. This package owns execution and th
 ledger. Your application keeps what is genuinely its own: the provider, model and
 request-type enums, the agents, the actions that build prompts, the UI, and tenancy.
 
+Moving an existing application onto the package? Read [docs/ADOPTION.md](docs/ADOPTION.md).
+
 ## Requirements
 
 - PHP `^8.4`

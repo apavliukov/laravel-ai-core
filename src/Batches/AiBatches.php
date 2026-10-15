@@ -7,6 +7,7 @@ namespace AlexPavliukov\AiCore\Batches;
 use AlexPavliukov\AiCore\AiCore;
 use AlexPavliukov\AiCore\Enums\ProcessStatus;
 use AlexPavliukov\AiCore\Models\AiRequest;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 
@@ -39,7 +40,9 @@ final readonly class AiBatches
             ->withoutGlobalScopes()
             ->where('batch_id', $batchId)
             ->with('model.provider')
-            ->get();
+            ->get()
+            // What the poll hands to the screen: never the prompts.
+            ->each->makeHidden(['payload', 'custom_prompt']);
 
         $failed = $requests->first(
             static fn (AiRequest $request): bool => $request->status === ProcessStatus::FAILED && $request->request_type->failsBatch(),
@@ -62,8 +65,12 @@ final readonly class AiBatches
             return;
         }
 
+        $userId = auth()->id();
+
         AiCore::requestModel()::query()
             ->where('batch_id', $batchId)
+            // A signed-in member moves only their own rows: the id may have come back from the browser.
+            ->when($userId !== null, static fn (Builder $query): Builder => $query->where('user_id', $userId))
             ->update([
                 'requestable_type' => $requestable->getMorphClass(),
                 'requestable_id' => $requestable->getKey(),

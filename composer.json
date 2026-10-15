@@ -16,12 +16,8 @@
     "require-dev": {
         "larastan/larastan": "^3.0",
         "laravel/pint": "^1.13",
-        "livewire/livewire": "^4.4",
         "orchestra/testbench": "^11.0",
         "phpunit/phpunit": "^11.5 || ^12.0"
-    },
-    "suggest": {
-        "livewire/livewire": "Required for the HasAsyncAiRequest polling trait."
     },
     "autoload": {
         "psr-4": {

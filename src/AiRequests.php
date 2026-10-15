@@ -15,8 +15,10 @@ use AlexPavliukov\AiCore\Events\AiRequestDispatching;
 use AlexPavliukov\AiCore\Execution\AiRequestExecutor;
 use AlexPavliukov\AiCore\Jobs\ProcessAiRequestJob;
 use AlexPavliukov\AiCore\Models\AiRequest;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Laravel\Ai\Contracts\Question;
 use Laravel\Ai\Responses\ClassificationResponse;
 use Laravel\Ai\Responses\Data\TextUsage;
@@ -55,6 +57,10 @@ final readonly class AiRequests
         array $applyContext = [],
         ?string $batchId = null,
     ): ?string {
+        if ($applier !== null && ! is_a($applier, AppliesAiResult::class, true)) {
+            throw new InvalidArgumentException("The applier {$applier} must implement ".AppliesAiResult::class.'.');
+        }
+
         $model = $this->textModel($requestType, $requestable);
 
         if (! $model instanceof AiModelContract) {
@@ -117,6 +123,10 @@ final readonly class AiRequests
     ): AiRequest {
         $authId = auth()->id();
         $userId ??= is_int($authId) ? $authId : null;
+
+        if ($batchId !== null && $authId !== null) {
+            $this->assertOwnBatch($batchId, $authId);
+        }
 
         event(new AiRequestDispatching($requestable, $requestType, $model, $userId));
 
@@ -191,6 +201,23 @@ final readonly class AiRequests
     public function classificationModel(): ?AiModelContract
     {
         return $this->models->forClassification();
+    }
+
+    /**
+     * A signed-in member joins only a batch they started: a batch id may have
+     * come back from the browser.
+     */
+    private function assertOwnBatch(string $batchId, int|string $userId): void
+    {
+        $foreign = AiCore::requestModel()::query()
+            ->withoutGlobalScopes()
+            ->where('batch_id', $batchId)
+            ->where(static fn (Builder $query): Builder => $query->whereNull('user_id')->orWhere('user_id', '!=', $userId))
+            ->exists();
+
+        if ($foreign) {
+            throw new InvalidArgumentException("Batch {$batchId} belongs to someone else.");
+        }
     }
 
     /**

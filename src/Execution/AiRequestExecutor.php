@@ -19,6 +19,7 @@ use Closure;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Question;
+use Laravel\Ai\Exceptions\FailoverableException;
 use Laravel\Ai\Providers\Tools\WebSearch;
 use Laravel\Ai\Responses\ClassificationResponse;
 use Laravel\Ai\Responses\Data\Answer;
@@ -236,13 +237,29 @@ final readonly class AiRequestExecutor
     }
 
     /**
-     * Report a call that threw and fail its row with the exception's message.
+     * Report a call that threw and fail its row with a message safe to show.
      */
     public function failWith(Throwable $exception, AiRequest $aiRequest, ?AiModelContract $model, float $startedAt): AiResponseDto
     {
         $this->report($exception, $aiRequest, $model);
 
-        return $this->fail($aiRequest, $model, $exception->getMessage(), $this->elapsed($startedAt));
+        return $this->fail($aiRequest, $model, self::publicMessage($exception, $aiRequest), $this->elapsed($startedAt));
+    }
+
+    /**
+     * What a member may read about a failure. The ledger's error reaches the
+     * screen, and a provider's or the host's own exception can carry account
+     * details, request bodies or SQL; only the SDK's templated provider errors
+     * and the core's configuration errors are kept, the rest is reported in
+     * full and shown as a reference.
+     */
+    public static function publicMessage(?Throwable $exception, AiRequest $aiRequest): string
+    {
+        if ($exception instanceof FailoverableException || $exception instanceof AiMisconfiguredException) {
+            return $exception->getMessage();
+        }
+
+        return "The AI request failed (ref #{$aiRequest->id}).";
     }
 
     /**

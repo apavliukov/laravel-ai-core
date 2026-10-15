@@ -27,6 +27,7 @@ abstract class TestCase extends Orchestra
     protected function defineEnvironment($app): void
     {
         $app['config']->set('database.default', 'testing');
+        $app['config']->set('app.key', 'base64:'.base64_encode(str_repeat('k', 32)));
         $app['config']->set('ai-core.enums', [
             'provider' => FakeProvider::class,
             'model' => FakeModel::class,
@@ -37,7 +38,6 @@ abstract class TestCase extends Orchestra
 
     protected function defineDatabaseMigrations(): void
     {
-        $this->loadLaravelMigrations();
         $this->loadMigrationsFrom([__DIR__.'/../database/migrations', __DIR__.'/Fixtures/migrations']);
     }
 

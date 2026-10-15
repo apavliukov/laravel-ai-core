@@ -16,7 +16,7 @@ and the ledger:
 - `AiRequests`, the public service: dispatch to the queue, run inline, classify, record
   a call made outside an agent, open a pending row;
 - the executor and `ProcessAiRequestJob` (`@internal`), cost accounting (`AiCost`),
-  fingerprints, batch status and the optional Livewire polling trait;
+  fingerprints and batch status (`AiBatches`);
 - extension points as plain classes the host extends and binds: `SystemPrompts`,
   `ModelAssignments`.
 
@@ -28,8 +28,8 @@ subclass and migration), quotas and analytics (the host listens to the core even
 - Code, comments, docs, commit messages and tests are in English.
 - The package is public and host-agnostic: never name or describe a particular host
   application; say "the host application".
-- `livewire/livewire` stays in `suggest` and `require-dev`, never in `require`. Where
-  the host stores things (settings, prompts, assignments) is the host's choice: the
+- No UI and no UI framework: the package gives data (`AiBatches::status()`), the host
+  renders and polls it however it likes. Where the host stores things (settings, prompts, assignments) is the host's choice: the
   core ships a default and the host extends and binds its own class; never depend on
   a storage package. No dependency on any error tracker: report through `report()`.
 - No interface with a single implementation: an extension point is a concrete class.

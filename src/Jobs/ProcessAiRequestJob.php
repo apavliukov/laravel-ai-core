@@ -11,6 +11,7 @@ use AlexPavliukov\AiCore\Contracts\AppliesAiResult;
 use AlexPavliukov\AiCore\Exceptions\AiMisconfiguredException;
 use AlexPavliukov\AiCore\Execution\AiRequestExecutor;
 use AlexPavliukov\AiCore\Models\AiRequest;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Attributes\Timeout;
@@ -20,10 +21,11 @@ use Throwable;
 /**
  * Runs one AI request off the HTTP request. Never retried: an AI call is
  * expensive and not idempotent, so a failure is reported rather than repeated.
+ * Encrypted: the payload carries the prompt, and a failed job keeps it.
  */
 #[Timeout(AiRequestExecutor::TIMEOUT_SECONDS)]
 #[Tries(1)]
-final class ProcessAiRequestJob implements ShouldQueue
+final class ProcessAiRequestJob implements ShouldBeEncrypted, ShouldQueue
 {
     use Queueable;
 
@@ -95,7 +97,7 @@ final class ProcessAiRequestJob implements ShouldQueue
         resolve(AiRequestExecutor::class)->fail(
             $aiRequest,
             $aiRequest->model?->enumOrFallback(),
-            $exception?->getMessage() ?? 'Generation job failed',
+            AiRequestExecutor::publicMessage($exception, $aiRequest),
             null,
         );
     }

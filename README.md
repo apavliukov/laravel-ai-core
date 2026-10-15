@@ -14,7 +14,6 @@ request-type enums, the agents, the actions that build prompts, the UI, and tena
 - PHP `^8.4`
 - Laravel `^13.0`
 - [`laravel/ai`](https://github.com/laravel/ai) `^1.1`
-- Optional: `livewire/livewire` `^4.4` for the polling trait
 
 ## Installation
 
@@ -112,10 +111,17 @@ Queued calls run `ProcessAiRequestJob` on `ai-core.queue.connection`. The connec
 ## Polling a batch
 
 `AiBatches::status($batchId)` reports whether a batch is still running, completed or
-failed. In Livewire, use the `HasAsyncAiRequest` trait: start tracking the batch id,
-call `pollAsyncAiRequest()` from `wire:poll`, and implement `onAsyncAiCompleted()` and
-`onAsyncAiFailed()`. `AiBatches::reattach()` moves a batch to the record it turned out to
-belong to.
+failed, with the batch's requests and the error that failed it. Polling it from your UI
+(a Livewire `wire:poll`, an endpoint, anything) is up to your application.
+`AiBatches::reattach()` moves a batch to the record it turned out to belong to.
+
+`status()` reads a batch across tenants, so keep batch ids on the server: never accept
+one from the browser (in Livewire, mark the property `#[Locked]`). Joining a batch in
+`open()`/`dispatch()` and `reattach()` only touch the signed-in member's own rows.
+
+A failed row's `error_message` is safe to show: the SDK's provider errors and the core's
+configuration errors keep their text, anything else reads "The AI request failed
+(ref #id)" and is reported in full through `report()`.
 
 ## Extension points
 

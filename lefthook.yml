@@ -1,0 +1,16 @@
+commit-msg:
+  commands:
+    commitlint:
+      run: yarn run commitlint --edit "{1}"
+
+pre-commit:
+  commands:
+    pint:
+      glob: "*.php"
+      run: vendor/bin/pint {staged_files}
+      stage_fixed: true
+
+pre-push:
+  commands:
+    larastan:
+      run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G

@@ -1,0 +1,8 @@
+/.idea/
+vendor/
+composer.lock
+.phpunit.result.cache
+.phpunit.cache
+node_modules/
+.yarn/
+/docs/DESIGN.md

@@ -1,0 +1,46 @@
+{
+    "name": "apavliukov/laravel-ai-core",
+    "description": "Shared AI core on top of laravel/ai: model catalogue with prices, request ledger, executor, queue, cost accounting and batch polling.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Aleksandr Pavliukov"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "laravel/ai": "^1.1",
+        "laravel/framework": "^13.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.13",
+        "livewire/livewire": "^4.4",
+        "orchestra/testbench": "^11.0",
+        "phpunit/phpunit": "^11.5 || ^12.0"
+    },
+    "suggest": {
+        "livewire/livewire": "Required for the HasAsyncAiRequest polling trait."
+    },
+    "autoload": {
+        "psr-4": {
+            "AlexPavliukov\\AiCore\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "AlexPavliukov\\AiCore\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "AlexPavliukov\\AiCore\\AiCoreServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

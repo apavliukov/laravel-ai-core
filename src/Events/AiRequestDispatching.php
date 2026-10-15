@@ -19,6 +19,6 @@ final readonly class AiRequestDispatching
         public Model $requestable,
         public AiRequestTypeContract $requestType,
         public AiModelContract $model,
-        public ?int $userId,
+        public int|string|null $userId,
     ) {}
 }

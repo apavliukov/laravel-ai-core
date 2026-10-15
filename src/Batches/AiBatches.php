@@ -61,14 +61,13 @@ final readonly class AiBatches
      * rows move: the signed-in member's, or $userId's, and with neither only
      * rows that have no owner. The batch id may have come back from the browser.
      */
-    public function reattach(string $batchId, Model $requestable, ?int $userId = null): void
+    public function reattach(string $batchId, Model $requestable, int|string|null $userId = null): void
     {
         if ($batchId === '') {
             return;
         }
 
-        $authId = auth()->id();
-        $userId ??= is_int($authId) ? $authId : null;
+        $userId = AiCore::actor($userId);
 
         AiCore::requestModel()::query()
             ->where('batch_id', $batchId)

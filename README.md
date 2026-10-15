@@ -25,7 +25,8 @@ php artisan migrate
 ```
 
 Table names are configurable in `config/ai-core.php` (`table_names`); set them before
-migrating.
+migrating. The published migration keys `user_id` as a big integer; if your users have
+string keys (UUID, ULID), change that column in your copy before migrating.
 
 ## The catalogue
 

@@ -119,10 +119,9 @@ final readonly class AiRequests
         AiRequestTypeContract $requestType,
         ?string $batchId = null,
         ?string $customPrompt = null,
-        ?int $userId = null,
+        int|string|null $userId = null,
     ): AiRequest {
-        $authId = auth()->id();
-        $userId ??= is_int($authId) ? $authId : null;
+        $userId = AiCore::actor($userId);
 
         if ($batchId !== null) {
             $this->assertOwnBatch($batchId, $userId);
@@ -208,7 +207,7 @@ final readonly class AiRequests
      * back from the browser. No owner (a worker, the CLI) is an owner too: it
      * joins only rows that have none, never a member's.
      */
-    private function assertOwnBatch(string $batchId, ?int $userId): void
+    private function assertOwnBatch(string $batchId, int|string|null $userId): void
     {
         $foreign = AiCore::requestModel()::query()
             ->withoutGlobalScopes()

@@ -55,6 +55,22 @@ final class AiCore
     }
 
     /**
+     * Who acts now: the given user id, else the signed-in user's, else null
+     * (a worker, the CLI). Keys stay as they are, so a string key (UUID, ULID)
+     * is never mistaken for nobody.
+     */
+    public static function actor(int|string|null $userId = null): int|string|null
+    {
+        if ($userId !== null) {
+            return $userId;
+        }
+
+        $authId = auth()->id();
+
+        return is_int($authId) || is_string($authId) ? $authId : null;
+    }
+
+    /**
      * @param  'providers'|'models'|'requests'  $table
      */
     public static function table(string $table): string

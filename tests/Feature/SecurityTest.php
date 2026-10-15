@@ -79,6 +79,22 @@ final class SecurityTest extends TestCase
         $this->aiRequests()->open($this->subject(), FakeModel::Small, FakeRequestType::Analysis, 'members');
     }
 
+    public function test_a_string_user_key_is_an_owner_not_nobody(): void
+    {
+        $this->seedAiCatalog(FakeModel::Small);
+        $this->aiRequests()->open($this->subject(), FakeModel::Small, FakeRequestType::Analysis, 'system');
+        $this->actingAs(new class extends User
+        {
+            public function getAuthIdentifier(): string
+            {
+                return '01JAXQ6M3V8S0Q5N1C2D3E4F5G';
+            }
+        });
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->aiRequests()->open($this->subject(), FakeModel::Small, FakeRequestType::Analysis, 'system');
+    }
+
     public function test_an_applier_must_implement_the_contract_and_the_queued_prompt_is_encrypted(): void
     {
         $this->seedAiCatalog(FakeModel::Small);

@@ -22,7 +22,7 @@ use Illuminate\Support\Fluent;
  *
  * @property int $id
  * @property int $ai_model_id
- * @property int|null $user_id
+ * @property int|string|null $user_id
  * @property string $requestable_type
  * @property int|string $requestable_id
  * @property string|null $batch_id

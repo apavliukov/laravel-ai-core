@@ -17,8 +17,15 @@ request-type enums, the agents, the actions that build prompts, the UI, and tena
 
 ## Installation
 
+The package is published on [Packagist](https://packagist.org/packages/apavliukov/laravel-ai-core):
+
 ```bash
 composer require apavliukov/laravel-ai-core
+```
+
+Publish the config and the migration, then migrate:
+
+```bash
 php artisan vendor:publish --tag=ai-core-config
 php artisan vendor:publish --tag=ai-core-migrations
 php artisan migrate

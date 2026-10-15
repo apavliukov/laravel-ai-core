@@ -9,7 +9,8 @@ use LogicException;
 
 /**
  * The model a platform admin put a request type on. By default nothing is
- * stored: every type runs on the active provider's active model. A project
+ * stored: every type runs on the active model of the first enabled provider
+ * in its priority (see ModelResolver::forText()). A project
  * that keeps assignments extends this class, stores them where it likes and
  * binds its subclass. Whether an assignment still qualifies is the resolver's
  * call, so a retired model is returned as stored, not hidden.

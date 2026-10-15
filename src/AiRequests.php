@@ -110,7 +110,7 @@ final readonly class AiRequests
     /**
      * Open a pending ledger row for a call the caller runs itself.
      *
-     * @param  int|null  $userId  A follow-up made in the worker names the member of the request it follows.
+     * @param  int|string|null  $userId  A follow-up made in the worker names the member of the request it follows.
      */
     public function open(
         Model $requestable,

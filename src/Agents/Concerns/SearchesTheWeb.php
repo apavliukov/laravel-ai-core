@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace AlexPavliukov\AiCore\Agents\Concerns;
 
-use AlexPavliukov\AiCore\Enums\AiCapability;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Providers\Tools\WebSearch;
 

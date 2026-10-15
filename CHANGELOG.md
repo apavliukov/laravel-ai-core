@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.3.0](https://github.com/apavliukov/laravel-ai-core/compare/v0.2.2...v0.3.0) (2026-10-15)
+
+### ⚠ BREAKING CHANGES
+
+* AiProviderContract requires static priority(AiCapability);
+  dispatch() and run() throw instead of returning null; executor fail() takes
+  no model.
+
+### Features
+
+* hard provider switch with capability priorities ([3d70ccf](https://github.com/apavliukov/laravel-ai-core/commit/3d70ccff8a56099ad61b53e525ad6dfd4ed9972c)), closes [#1](https://github.com/apavliukov/laravel-ai-core/issues/1) [#2](https://github.com/apavliukov/laravel-ai-core/issues/2) [#3](https://github.com/apavliukov/laravel-ai-core/issues/3) [#4](https://github.com/apavliukov/laravel-ai-core/issues/4)
+
 ## [0.2.2](https://github.com/apavliukov/laravel-ai-core/compare/v0.2.1...v0.2.2) (2026-10-15)
 
 ### Bug Fixes

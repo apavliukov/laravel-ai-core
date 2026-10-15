@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.2.2](https://github.com/apavliukov/laravel-ai-core/compare/v0.2.1...v0.2.2) (2026-10-15)
+
+### Bug Fixes
+
+* keep string user keys as batch owners ([3a34106](https://github.com/apavliukov/laravel-ai-core/commit/3a34106277efabb7deac48055a13fea33c6335cd))
+
 ## [0.2.1](https://github.com/apavliukov/laravel-ai-core/compare/v0.2.0...v0.2.1) (2026-10-15)
 
 ### Bug Fixes

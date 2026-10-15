@@ -9,6 +9,7 @@ use AlexPavliukov\AiCore\Batches\AiBatches;
 use AlexPavliukov\AiCore\Enums\ProcessStatus;
 use AlexPavliukov\AiCore\Execution\AiRequestExecutor;
 use AlexPavliukov\AiCore\Jobs\ProcessAiRequestJob;
+use AlexPavliukov\AiCore\Models\AiRequest;
 use AlexPavliukov\AiCore\Tests\Fixtures\FakeAgent;
 use AlexPavliukov\AiCore\Tests\Fixtures\FakeModel;
 use AlexPavliukov\AiCore\Tests\Fixtures\FakeRequestType;
@@ -16,6 +17,7 @@ use AlexPavliukov\AiCore\Tests\Fixtures\Subject;
 use AlexPavliukov\AiCore\Tests\TestCase;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Foundation\Auth\User;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Laravel\Ai\Exceptions\RateLimitedException;
 use RuntimeException;
@@ -57,6 +59,24 @@ final class SecurityTest extends TestCase
 
         $this->expectException(InvalidArgumentException::class);
         $this->aiRequests()->open($this->subject(), FakeModel::Small, FakeRequestType::Analysis, 'batch-1');
+    }
+
+    public function test_without_a_signed_in_member_only_ownerless_rows_are_joined_or_moved(): void
+    {
+        $this->seedAiCatalog(FakeModel::Small);
+        $memberId = DB::table('users')->insertGetId(['name' => 'Member', 'email' => 'member@example.com', 'password' => 'secret']);
+        $this->aiRequests()->open($this->subject(), FakeModel::Small, FakeRequestType::Analysis, 'members', userId: $memberId);
+        $this->aiRequests()->open($this->subject(), FakeModel::Small, FakeRequestType::Analysis, 'system');
+
+        $this->aiRequests()->open($this->subject(), FakeModel::Small, FakeRequestType::Check, 'system');
+        $this->assertSame(2, AiRequest::query()->where('batch_id', 'system')->count());
+
+        $guestsRecord = $this->subject();
+        resolve(AiBatches::class)->reattach('members', $guestsRecord);
+        $this->assertSame(0, AiRequest::query()->where('requestable_id', $guestsRecord->getKey())->count());
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->aiRequests()->open($this->subject(), FakeModel::Small, FakeRequestType::Analysis, 'members');
     }
 
     public function test_an_applier_must_implement_the_contract_and_the_queued_prompt_is_encrypted(): void

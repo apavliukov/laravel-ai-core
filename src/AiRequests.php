@@ -124,8 +124,8 @@ final readonly class AiRequests
         $authId = auth()->id();
         $userId ??= is_int($authId) ? $authId : null;
 
-        if ($batchId !== null && $authId !== null) {
-            $this->assertOwnBatch($batchId, $authId);
+        if ($batchId !== null) {
+            $this->assertOwnBatch($batchId, $userId);
         }
 
         event(new AiRequestDispatching($requestable, $requestType, $model, $userId));
@@ -204,15 +204,18 @@ final readonly class AiRequests
     }
 
     /**
-     * A signed-in member joins only a batch they started: a batch id may have
-     * come back from the browser.
+     * A request joins only a batch of the same owner: a batch id may have come
+     * back from the browser. No owner (a worker, the CLI) is an owner too: it
+     * joins only rows that have none, never a member's.
      */
-    private function assertOwnBatch(string $batchId, int|string $userId): void
+    private function assertOwnBatch(string $batchId, ?int $userId): void
     {
         $foreign = AiCore::requestModel()::query()
             ->withoutGlobalScopes()
             ->where('batch_id', $batchId)
-            ->where(static fn (Builder $query): Builder => $query->whereNull('user_id')->orWhere('user_id', '!=', $userId))
+            ->where(static fn (Builder $query): Builder => $userId === null
+                ? $query->whereNotNull('user_id')
+                : $query->whereNull('user_id')->orWhere('user_id', '!=', $userId))
             ->exists();
 
         if ($foreign) {

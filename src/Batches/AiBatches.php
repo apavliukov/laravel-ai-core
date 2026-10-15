@@ -57,20 +57,24 @@ final readonly class AiBatches
 
     /**
      * Point a batch at the record it turned out to belong to, for work that
-     * ran against a subject before its real owner existed.
+     * ran against a subject before its real owner existed. Only the owner's
+     * rows move: the signed-in member's, or $userId's, and with neither only
+     * rows that have no owner. The batch id may have come back from the browser.
      */
-    public function reattach(string $batchId, Model $requestable): void
+    public function reattach(string $batchId, Model $requestable, ?int $userId = null): void
     {
         if ($batchId === '') {
             return;
         }
 
-        $userId = auth()->id();
+        $authId = auth()->id();
+        $userId ??= is_int($authId) ? $authId : null;
 
         AiCore::requestModel()::query()
             ->where('batch_id', $batchId)
-            // A signed-in member moves only their own rows: the id may have come back from the browser.
-            ->when($userId !== null, static fn (Builder $query): Builder => $query->where('user_id', $userId))
+            ->where(static fn (Builder $query): Builder => $userId === null
+                ? $query->whereNull('user_id')
+                : $query->where('user_id', $userId))
             ->update([
                 'requestable_type' => $requestable->getMorphClass(),
                 'requestable_id' => $requestable->getKey(),

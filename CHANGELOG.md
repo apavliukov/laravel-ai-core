@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.4.0](https://github.com/apavliukov/laravel-ai-core/compare/v0.3.1...v0.4.0) (2026-10-17)
+
+### ⚠ BREAKING CHANGES
+
+* ModelAssignments subclasses implement protected store()
+  instead of overriding assign(), which is now final.
+
+### Features
+
+* subject key stamping, assignable models, rejected-answer reports, row factory ([7263754](https://github.com/apavliukov/laravel-ai-core/commit/726375496deec1bac08944c4d008f1e416622697))
+
 ## [0.3.1](https://github.com/apavliukov/laravel-ai-core/compare/v0.3.0...v0.3.1) (2026-10-15)
 
 ## [0.3.0](https://github.com/apavliukov/laravel-ai-core/compare/v0.2.2...v0.3.0) (2026-10-15)

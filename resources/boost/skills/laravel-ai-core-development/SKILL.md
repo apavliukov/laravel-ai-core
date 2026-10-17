@@ -145,14 +145,26 @@ final readonly class ApplySummary implements AppliesAiResult
 - Build DTOs with `AiResponseDto::fromRequest($row)`; result DTOs extend
   `BaseAiResultDto::fromAiResponse()`.
 - `AiBatches::reattach($batchId, $owner)` moves a batch from a placeholder subject to the
-  record it turned out to belong to; only the same owner's rows move.
+  record it turned out to belong to; only the same owner's rows move. The host's
+  **action** that creates the record calls it, not a component.
 - The polling UI (trait, toast, `wire:poll`) is the application's code.
+
+## Model Assignments
+
+- A settings page offers `resolve(ModelResolver::class)->assignableModels($type)`: the
+  catalogued models of enabled providers that can do everything the type requires.
+- Save with `resolve(ModelAssignments::class)->assign($type, $model)`: final, it refuses
+  (`AiMisconfiguredException`) a model outside that list; null or `''` clears.
+- The application's subclass implements `assigned()` and `protected store()`; never
+  override `assign()`.
 
 ## Errors
 
 - `error_message` is safe to show: SDK provider errors, misconfiguration, truncation and
   `validate()` rejections keep their text; anything else is
   `The AI request failed (ref #id).` and the full exception goes to `report()`.
+- A truncated answer or a `validate()` rejection is reported as
+  `AiRequestRejectedException` and keeps its reason in `error_message`.
 - Never write provider or database exception text into the ledger or a toast yourself.
 
 ## Events
@@ -184,6 +196,9 @@ Queue::fake(); Queue::assertPushed(ProcessAiRequestJob::class);
   truncation or web search counting, give the executor a stub agent whose `prompt()`
   returns a built `AgentResponse`.
 - Expect `The AI request failed (ref #id).` in `error_message` for non-provider failures.
+- Finished rows for seeders/tests: `AiRequest::factory()->for($subject, 'requestable')
+  ->forModel($model)->completed($answer, $usage, $payload)` / `->failed($error)` /
+  `->transcribed($text, $usage)` — no provider, no events.
 
 ## Never
 
@@ -195,5 +210,7 @@ Queue::fake(); Queue::assertPushed(ProcessAiRequestJob::class);
 - Take a ledger row's tenant from the session — take it from the subject.
 - Accept a batch id from the browser.
 - Override `state()` / `rejection()`, or put user input into `agentState()` or `applier`.
-- Change `ai-core.custom_prompt_heading` casually: it is part of every request
-  fingerprint.
+- Change `ai-core.custom_prompt_heading` casually: it is part of the fingerprint of every
+  request with a Custom Prompt.
+- Seed AI history with `open()` + `record()` or hand-built rows: use the factory.
+- Write a `creating` hook to stamp the subject's key: set `ai-core.subject_key.column`.

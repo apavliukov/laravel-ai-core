@@ -94,6 +94,24 @@ final readonly class ModelResolver
         });
     }
 
+    /**
+     * The models a request type may be assigned: the catalogued models of the
+     * enabled providers that can do everything the type requires. What a
+     * settings page offers, and what ModelAssignments::assign() accepts.
+     *
+     * @return list<AiModelContract>
+     */
+    public function assignableModels(AiRequestTypeContract $requestType): array
+    {
+        $enabled = $this->enabledProviders();
+
+        return array_values(array_filter(
+            AiCore::modelEnum()::cases(),
+            fn (AiModelContract $model): bool => $this->canAnswer($model, $requestType)
+                && (bool) $enabled->get($model->provider()->value)?->models->contains('name', $model->value),
+        ));
+    }
+
     public function forClassification(): ?AiModelContract
     {
         return $this->forCapability(AiCapability::Classification);

@@ -146,7 +146,9 @@ failed, with the batch's requests and the error that failed it. Polling it from 
 one from the browser (in Livewire, mark the property `#[Locked]`). Joining a batch in
 `open()`/`dispatch()` and `reattach()` only touch the signed-in member's own rows.
 
-A failed row's `error_message` is safe to show: the SDK's provider errors and the core's
+A truncated answer or one an agent's `validate()` rejects is reported as an
+`AiRequestRejectedException` (throttle or ignore that one class if it is noisy) and keeps
+its reason as `error_message`. A failed row's `error_message` is safe to show: the SDK's provider errors and the core's
 configuration errors keep their text, anything else reads "The AI request failed
 (ref #id)" and is reported in full through `report()`.
 
@@ -157,22 +159,41 @@ Both are plain classes: extend and bind your own in a service provider.
 - `SystemPrompts::for(BaseAgent $agent)`: where a system prompt comes from. Defaults to
   the agent's code.
 - `ModelAssignments`: a model per request type. By default there are none and every
-  type runs on the active model; store assignments wherever your application keeps
-  settings.
+  type runs on the active model. Override `assigned()` and `store()` over wherever your
+  application keeps settings; `assign()` is final and accepts only a model from
+  `ModelResolver::assignableModels($type)`, which is also what a settings page should
+  offer.
 
 ## Tenancy and other host concerns
 
-The ledger has no tenant column. Point `ai-core.models.request` at your own subclass of
-`AlexPavliukov\AiCore\Models\AiRequest`, add the column in your own migration, and fill
-it in a `creating` hook; rows opened by the core have their `requestable` relation set
-before saving. Quotas, analytics and alerts listen to `AiRequestDispatching` (throw to
+To stamp a key of the subject on every ledger row (an organization, say), add the column
+in your own migration, set `ai-core.subject_key.column`, and implement
+`AlexPavliukov\AiCore\Contracts\AiRequestable::aiSubjectKey()` on every model a request
+can be about. Rows opened by `AiRequests` are stamped from their subject; a factory or a
+seeder sets the column itself. Scoping the ledger by tenant (global scopes) stays in your
+own subclass of `AlexPavliukov\AiCore\Models\AiRequest`, pointed at by
+`ai-core.models.request`. Quotas, analytics and alerts listen to `AiRequestDispatching` (throw to
 stop a request before its row exists), `AiRequestCompleted` and `AiRequestFailed`.
 
 ## Testing
 
 Use `AlexPavliukov\AiCore\Testing\InteractsWithAiCore` in your tests:
-`seedAiCatalog($model)` syncs the catalogue and activates a model, and
-`fakeAgents([...])` gives every registered agent the same fake answers.
+`seedAiCatalog(...$models)` syncs the catalogue and enables each model's provider with it
+active, and `fakeAgents([...])` gives every registered agent the same fake answers.
+
+For seeders and tests that need finished rows, `AiRequest::factory()` writes them in the
+shapes the executor writes, with no provider and no events:
+
+```php
+AiRequest::factory()->for($subject, 'requestable')->forModel(AiModel::Mini)
+    ->completed(['summary' => '...'], new TextUsage(1200, 300), $payload)->create();
+AiRequest::factory()->for($subject, 'requestable')->failed('Timed out.')->create();
+AiRequest::factory()->for($comment, 'requestable')->forModel(AiModel::Whisper)
+    ->transcribed('Hello', new TranscriptionUsage(audioSeconds: 12.0))->create();
+```
+
+A subclass that has its own factory (by Laravel's naming convention) keeps it; extend
+`AlexPavliukov\AiCore\Database\Factories\AiRequestFactory` there to inherit the states.
 
 ## License
 

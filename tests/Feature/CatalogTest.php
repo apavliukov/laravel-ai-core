@@ -51,7 +51,7 @@ final class CatalogTest extends TestCase
                 return $this->model;
             }
 
-            public function assign(AiRequestTypeContract $type, ?string $model): void
+            protected function store(AiRequestTypeContract $type, ?string $model): void
             {
                 $this->model = $model;
             }
@@ -61,10 +61,10 @@ final class CatalogTest extends TestCase
         $assignments->assign(FakeRequestType::Analysis, FakeModel::Large->value);
         $this->assertSame(FakeModel::Large, $this->resolver()->forText(FakeRequestType::Analysis, 'test'));
 
-        $assignments->assign(FakeRequestType::Analysis, 'retired-model');
+        $assignments->model = 'retired-model';
         $this->assertSame(FakeModel::Small, $this->resolver()->forText(FakeRequestType::Analysis, 'test'));
 
-        $assignments->assign(FakeRequestType::Analysis, FakeModel::Transcriber->value);
+        $assignments->model = FakeModel::Transcriber->value;
         $this->expectException(AiMisconfiguredException::class);
         $this->resolver()->forText(FakeRequestType::Analysis, 'test');
     }

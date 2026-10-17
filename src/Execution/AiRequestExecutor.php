@@ -14,6 +14,7 @@ use AlexPavliukov\AiCore\Events\AiRequestCompleted;
 use AlexPavliukov\AiCore\Events\AiRequestFailed;
 use AlexPavliukov\AiCore\Exceptions\AiMisconfiguredException;
 use AlexPavliukov\AiCore\Exceptions\AiRequestFailedException;
+use AlexPavliukov\AiCore\Exceptions\AiRequestRejectedException;
 use AlexPavliukov\AiCore\Models\AiRequest;
 use Closure;
 use Laravel\Ai\Classification;
@@ -110,17 +111,18 @@ final readonly class AiRequestExecutor
             ->contains(static fn (Step $step): bool => $step->finishReason === FinishReason::Length);
 
         if ($truncated) {
-            return $this->fail(
+            return $this->reject(
                 $aiRequest,
+                $model,
                 'The answer was cut off before it finished (incomplete: max output tokens).',
-                $this->elapsed($startedAt),
+                $startedAt,
             );
         }
 
         $structured = $response instanceof StructuredAgentResponse ? $response->structured : null;
 
         if ($structured !== null && ($rejection = $agent->rejection($structured)) !== null) {
-            return $this->fail($aiRequest, $rejection, $this->elapsed($startedAt));
+            return $this->reject($aiRequest, $model, $rejection, $startedAt);
         }
 
         // A result the project writes itself is written before the row says
@@ -235,6 +237,22 @@ final readonly class AiRequestExecutor
         $this->report($exception, $aiRequest, $model);
 
         return $this->fail($aiRequest, self::publicMessage($exception, $aiRequest), $this->elapsed($startedAt));
+    }
+
+    /**
+     * Fail a row whose answer was refused (truncated, rejected by the agent),
+     * keeping the reason as its message, and report it: otherwise a model or a
+     * prompt that keeps failing this way leaves only FAILED rows behind.
+     */
+    private function reject(AiRequest $aiRequest, AiModelContract $model, string $reason, float $startedAt): AiResponseDto
+    {
+        report(new AiRequestRejectedException($reason, [
+            'ai_request_id' => $aiRequest->id,
+            'request_type' => $aiRequest->request_type->name,
+            'model' => $model->value,
+        ]));
+
+        return $this->fail($aiRequest, $reason, $this->elapsed($startedAt));
     }
 
     /**

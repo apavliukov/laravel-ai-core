@@ -5,20 +5,28 @@ declare(strict_types=1);
 namespace AlexPavliukov\AiCore\Models;
 
 use AlexPavliukov\AiCore\AiCore;
+use AlexPavliukov\AiCore\Contracts\AiRequestable;
 use AlexPavliukov\AiCore\Contracts\AiRequestTypeContract;
+use AlexPavliukov\AiCore\Database\Factories\AiRequestFactory;
 use AlexPavliukov\AiCore\Enums\ProcessStatus;
+use Illuminate\Database\Eloquent\Attributes\Boot;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Initialize;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\AsFluent;
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Fluent;
+use InvalidArgumentException;
 
 /**
  * One call to a provider, as the ledger keeps it. Tenancy and display
- * accessors belong to the project's subclass.
+ * accessors belong to the project's subclass; the subject key column, when
+ * configured, is stamped here.
  *
  * @property int $id
  * @property int $ai_model_id
@@ -57,6 +65,9 @@ use Illuminate\Support\Fluent;
 ])]
 class AiRequest extends Model
 {
+    /** @use HasFactory<AiRequestFactory> */
+    use HasFactory;
+
     /**
      * @param  array<string, mixed>  $attributes
      */
@@ -65,6 +76,50 @@ class AiRequest extends Model
         parent::__construct($attributes);
 
         $this->table = AiCore::table('requests');
+    }
+
+    /**
+     * Stamps the configured subject key from the subject on a row being
+     * created, when the subject is loaded (AiRequests::open() sets it). The
+     * subject decides, not the session: a worker, the CLI or a platform admin
+     * has no current tenant, or another one.
+     */
+    #[Boot]
+    public static function stampSubjectKey(): void
+    {
+        static::creating(static function (self $aiRequest): void {
+            $column = AiCore::subjectKeyColumn();
+
+            if ($column === null || ! $aiRequest->relationLoaded('requestable')) {
+                return;
+            }
+
+            $requestable = $aiRequest->getRelation('requestable');
+
+            if (! $requestable instanceof AiRequestable) {
+                throw new InvalidArgumentException(sprintf(
+                    '%s must implement %s to stamp %s on an AI request.',
+                    is_object($requestable) ? $requestable::class : 'null',
+                    AiRequestable::class,
+                    $column,
+                ));
+            }
+
+            $aiRequest->setAttribute($column, $requestable->aiSubjectKey());
+        });
+    }
+
+    /**
+     * A factory or a seeder names the subject key column like any other.
+     */
+    #[Initialize]
+    public function mergeSubjectKeyFillable(): void
+    {
+        $column = AiCore::subjectKeyColumn();
+
+        if ($column !== null) {
+            $this->mergeFillable([$column]);
+        }
     }
 
     /**
@@ -142,6 +197,23 @@ class AiRequest extends Model
     protected function about(Builder $query, Model $requestable, AiRequestTypeContract $requestType): Builder
     {
         return $query->whereMorphedTo('requestable', $requestable)->where('request_type', $requestType);
+    }
+
+    /**
+     * The package factory, unless the host's subclass has its own factory by
+     * Laravel's naming convention: then that one, so a host's tenant columns
+     * and states are never swapped for the package's.
+     *
+     * @return Factory<static>|null
+     */
+    protected static function newFactory(): ?Factory
+    {
+        if (static::class !== self::class && class_exists(Factory::resolveFactoryName(static::class))) {
+            return null;
+        }
+
+        /** @var Factory<static> */
+        return AiRequestFactory::new();
     }
 
     protected function casts(): array

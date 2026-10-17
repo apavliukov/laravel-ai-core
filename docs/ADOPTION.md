@@ -12,7 +12,7 @@ against the specific application, and the anti-patterns to remove.
 > package should not change behaviour; where it must (the ledger's usage shape, error
 > messages), the change is listed below.
 
-- **Composer:** `apavliukov/laravel-ai-core` (`^0.3`)
+- **Composer:** `apavliukov/laravel-ai-core` (`^0.4`)
 - **Namespace:** `AlexPavliukov\AiCore\`
 - **Requires:** PHP `^8.4`, Laravel `^13`, `laravel/ai ^1.1`
 
@@ -82,10 +82,12 @@ UI polls AiBatches::status($batchId) ◄──── BatchStatus (state, request
 | `Catalog\ModelAssignments` | Model per request type (extend and bind) |
 | `Batches\AiBatches` | `status()`, `reattach()` |
 | `Dto\AiResponseDto`, `Dto\BaseAiResultDto` | Response DTO (`fromRequest()`), base for result DTOs |
-| `Contracts\*` | `AiProviderContract`, `AiModelContract`, `AiRequestTypeContract`, `AppliesAiResult` |
+| `Contracts\*` | `AiProviderContract`, `AiModelContract`, `AiRequestTypeContract`, `AppliesAiResult`, `AiRequestable` (subject key) |
+| `Database\Factories\AiRequestFactory` | Finished ledger rows for seeders and tests (`completed`, `failed`, `transcribed`, `forModel`) |
 | `Enums\AiCapability`, `Enums\ProcessStatus` | Capabilities, row status |
 | `Events\*` | `AiRequestDispatching`, `AiRequestCompleted`, `AiRequestFailed` |
 | `Testing\InteractsWithAiCore` | `seedAiCatalog()`, `fakeAgents()` |
+| `Exceptions\*` | `AiMisconfiguredException`, `AiRequestFailedException` (reported), `AiRequestRejectedException` (reported) |
 | `ai-core:sync` | Enum → database catalogue sync |
 
 `Execution\AiRequestExecutor` and `Jobs\ProcessAiRequestJob` are internal: reach them
@@ -161,46 +163,32 @@ through `AiRequests`. The executor's timeout constants are public (§10).
 
 ## 5. Models, tenancy and config
 
-Point `ai-core.models.*` at your subclasses when you need factories, tenancy or
-display accessors:
+**The subject key.** A host that stamps a key of the subject on every ledger row (an
+organization) no longer writes a `creating` hook:
 
-```php
-final class AiRequest extends \AlexPavliukov\AiCore\Models\AiRequest
-{
-    use BelongsToTenant;
-    use HasFactory;
+1. Add the column in your own migration.
+2. Set `ai-core.subject_key.column` to it.
+3. Implement `AlexPavliukov\AiCore\Contracts\AiRequestable::aiSubjectKey()` on every model
+   a request can be about; your own subject interface (admin URL, label) may extend it.
+4. Delete the hook that copied the key.
 
-    #[Initialize]
-    public function mergeTenantFillable(): void
-    {
-        $this->mergeFillable(['tenant_id']);
-    }
+The package stamps the column only when the `requestable` relation is loaded, which
+`AiRequests::open()` always does, and takes the key **from the subject**, never from the
+session (a worker, the CLI or a platform admin has no current tenant, or another one).
+A loaded subject that does not implement the contract throws. Factories and seeders set
+the column themselves; the column is fillable while configured.
 
-    protected static function booted(): void
-    {
-        static::creating(static function (self $aiRequest): void {
-            // Set by AiRequests::open(); factories and seeders set the tenant themselves.
-            if (! $aiRequest->relationLoaded('requestable')) {
-                return;
-            }
+**Subclasses.** Point `ai-core.models.*` at your subclasses for tenant scoping, factories
+or display accessors. A tenant global scope or trait stays yours; the package touches no
+tenancy beyond the stamp.
 
-            $aiRequest->tenant_id = $aiRequest->requestable->tenantId();
-        });
-    }
-}
-```
-
-- `AiRequests::open()` sets the `requestable` relation before saving, so the hook reads
-  the subject without another query. Take the tenant **from the subject**, not from
-  the session: a worker, the CLI or a platform admin has no current tenant, or
-  another one.
 - Display accessors (formatted cost, prompts, legacy response parsing) belong in the
   subclass; override `responseText()` if old rows store answers in another shape.
 - `config/ai-core.php` holds the model classes, the enums, `table_names`,
   `custom_prompt_heading` and `queue.connection`. If the application already sends a
   Custom Prompt under its own heading, copy that text into `custom_prompt_heading`:
-  the heading is part of the request fingerprint, and changing it re-asks every
-  fingerprinted request once.
+  the heading is part of the fingerprint of every request with a Custom Prompt, and
+  changing it re-asks those once.
 
 ---
 
@@ -227,13 +215,38 @@ application's enums, outside the contracts.
 Both are plain classes. Extend and bind in a service provider:
 
 ```php
-$this->app->singleton(ModelAssignments::class, SettingsModelAssignments::class);
+$this->app->singleton(ModelAssignments::class, RequestTypeModels::class);
 $this->app->bind(SystemPrompts::class, EditableSystemPrompts::class);
 ```
 
-- `ModelAssignments`: `assigned()` returns null by default (no assignments);
-  `assign()` throws until a subclass stores them. Where to store is the application's
-  choice; the package depends on no storage package.
+- `ModelAssignments`: `assigned()` returns null by default (no assignments). `assign()` is
+  final: it accepts only a model from `ModelResolver::assignableModels($type)` (the
+  catalogued models of enabled providers that can do everything the type requires) and
+  hands it to `protected store()`, which throws until a subclass implements it. A
+  settings page offers `assignableModels($type)`. Where to store is the application's
+  choice; the package ships no storage-backed implementation and depends on no storage
+  package. An example over a settings store (`rawilk/laravel-settings`), **not part of
+  the package**:
+
+  ```php
+  final class RequestTypeModels extends ModelAssignments
+  {
+      public function assigned(AiRequestTypeContract $type): ?string
+      {
+          $model = Settings::get("ai.models.{$type->value}");
+
+          return is_string($model) && $model !== '' ? $model : null;
+      }
+
+      protected function store(AiRequestTypeContract $type, ?string $model): void
+      {
+          $model === null
+              ? Settings::forget("ai.models.{$type->value}")
+              : Settings::set("ai.models.{$type->value}", $model);
+      }
+  }
+  ```
+
 - `SystemPrompts::for(BaseAgent $agent)`: the agent's code by default. A subclass
   answers for some request types and returns `parent::for()` for the rest.
 
@@ -290,6 +303,9 @@ connection setting.
 - `AiRequestDispatching` fires before the pending row exists; a listener that throws
   (a quota) stops the request. `AiRequestCompleted` / `AiRequestFailed` fire after the
   row is written; use them for analytics mirrors and alerts.
+- A truncated answer or a `validate()` rejection fails its row with the reason and is
+  reported as `AiRequestRejectedException` (with `ai_request_id`, `request_type`,
+  `model`): throttle or ignore that class if one prompt rejects often.
 - The package reports through `report()`; it depends on no error tracker.
 
 ---
@@ -306,6 +322,15 @@ connection setting.
   truncation or web search counting, hand the executor a built `AgentResponse` from a
   stub agent that overrides `prompt()`.
 
+**Seeders.** A seeder writes rows; it does not make requests. Use the package factory
+(`AiRequest::factory()->completed() / ->failed() / ->transcribed()`, plus
+`forModel($model)`): it writes response, usage and cost in the executor's shapes and fires
+no events. Do not seed with `open()` + `record()` (that is the request path: it fires
+`AiRequestDispatching` and `AiRequestCompleted`, so quotas and analytics react) and do not
+wrap a seeder in `Event::fakeFor()`. `record()` is for real calls made outside an agent.
+A subclass with its own factory (Laravel's naming convention) keeps it: extend
+`AlexPavliukov\AiCore\Database\Factories\AiRequestFactory` there and add your columns.
+
 ---
 
 ## 13. What leaves the application
@@ -319,10 +344,14 @@ Delete, after switching callers:
 - the response DTO and the result-DTO base class;
 - the capability enum and the process-status enum;
 - the catalogue seeder logic (keep a seeder that calls the sync);
-- batch reattachment and batch-status code (keep the UI polling glue).
+- batch reattachment and batch-status code (keep the UI polling glue);
+- the `creating` hook that copied the subject's key onto the ledger row (set
+  `ai-core.subject_key.column` instead);
+- hand-built or `open()` + `record()` seeding of AI history (use the factory).
 
 Keep: the enums, agents, actions, classifications, result DTOs, transcription flow, the
-tenant column and model subclass, the polling UI, the statistics UI.
+tenant column and model subclass, the `ModelAssignments` subclass over your settings
+store (rename its `assign()` to `protected store()`), the polling UI, the statistics UI.
 
 ---
 
@@ -332,7 +361,9 @@ tenant column and model subclass, the polling UI, the statistics UI.
   its key is configured.
 - Returning null or skipping silently when no model is available.
 - Storing provider or database exception text in `error_message`.
-- Taking the tenant of a ledger row from the session instead of from its subject.
+- Taking the tenant of a ledger row from the session instead of from its subject, or
+  writing a `creating` hook for it instead of `ai-core.subject_key.column`.
+- Seeding AI history with `open()` + `record()` or with hand-built rows.
 - Accepting a batch id from the browser.
 - A public overridable hook on an abstract agent (a Pint `final_public_method_for_abstract_class`
   rule turns it final and breaks every subclass); override `agentState()` / `validate()`.

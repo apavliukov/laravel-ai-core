@@ -71,6 +71,17 @@ final class AiCore
     }
 
     /**
+     * The ledger column stamped from the subject's AiRequestable::aiSubjectKey(),
+     * or null when the host stamps nothing.
+     */
+    public static function subjectKeyColumn(): ?string
+    {
+        $column = config('ai-core.subject_key.column');
+
+        return is_string($column) && $column !== '' ? $column : null;
+    }
+
+    /**
      * @param  'providers'|'models'|'requests'  $table
      */
     public static function table(string $table): string

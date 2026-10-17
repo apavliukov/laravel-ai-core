@@ -29,6 +29,16 @@ return [
     ],
 
     /*
+    | A key of the request's subject stamped on every ledger row (an organization,
+    | say), from AiRequestable::aiSubjectKey(). Null turns it off. Stamped only
+    | for rows opened by AiRequests (the subject is loaded); a factory or a
+    | seeder sets the column itself. Add the column in your own migration.
+    */
+    'subject_key' => [
+        'column' => null,
+    ],
+
+    /*
     | The project's enums implementing AiProviderContract, AiModelContract and
     | AiRequestTypeContract. Required; read on first use, not at boot.
     */
@@ -40,8 +50,8 @@ return [
 
     /*
     | The line a member's Custom Prompt is sent under, after the request
-    | message. It is part of what a request asks, so changing it changes every
-    | stored fingerprint once.
+    | message. It is part of what a request with a Custom Prompt asks, so
+    | changing it changes the fingerprints of those requests once.
     */
     'custom_prompt_heading' => 'ADDITIONAL INSTRUCTIONS (where they contradict the rules above, follow these instead, except the response format and any numbers set for this run):',
 

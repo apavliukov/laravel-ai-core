@@ -14,9 +14,22 @@ use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
 
-final readonly class ModelResolver
+final class ModelResolver
 {
-    public function __construct(private Container $container) {}
+    /** @var Collection<array-key, AiProvider>|null */
+    private ?Collection $enabled = null;
+
+    public function __construct(private readonly Container $container) {}
+
+    /**
+     * Forget the providers this request already read. Saving, deleting or
+     * restoring a provider or a model does it on its own; call it only after a
+     * query-builder update that bypasses model events.
+     */
+    public function forgetProviders(): void
+    {
+        $this->enabled = null;
+    }
 
     /**
      * The model that answers a request type: the model a platform admin
@@ -68,30 +81,27 @@ final readonly class ModelResolver
      */
     public function forCapability(AiCapability $capability): ?AiModelContract
     {
-        // Asked on every render of a card that offers it and again by the action it calls.
-        return once(function () use ($capability): ?AiModelContract {
-            $enabled = $this->enabledProviders();
+        $enabled = $this->enabledProviders();
 
-            foreach (AiCore::providerEnum()::priority($capability) as $provider) {
-                $row = $enabled->get($provider->value);
+        foreach (AiCore::providerEnum()::priority($capability) as $provider) {
+            $row = $enabled->get($provider->value);
 
-                if (! $row instanceof AiProvider || blank(config("ai.providers.{$provider->value}.key"))) {
-                    continue;
-                }
-
-                $seeded = $row->models->pluck('name')->all();
-                $model = array_find(
-                    AiCore::modelsWithCapability($capability),
-                    static fn (AiModelContract $model): bool => $model->provider() === $provider && in_array($model->value, $seeded, true),
-                );
-
-                if ($model instanceof AiModelContract) {
-                    return $model;
-                }
+            if (! $row instanceof AiProvider || blank(config("ai.providers.{$provider->value}.key"))) {
+                continue;
             }
 
-            return null;
-        });
+            $seeded = $row->models->pluck('name')->all();
+            $model = array_find(
+                AiCore::modelsWithCapability($capability),
+                static fn (AiModelContract $model): bool => $model->provider() === $provider && in_array($model->value, $seeded, true),
+            );
+
+            if ($model instanceof AiModelContract) {
+                return $model;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -123,7 +133,7 @@ final readonly class ModelResolver
     private function enabledProviders(): Collection
     {
         /** @var Collection<array-key, AiProvider> */
-        return AiCore::providerModel()::query()
+        return $this->enabled ??= AiCore::providerModel()::query()
             ->active()
             ->with(['activeModel', 'models'])
             ->get()

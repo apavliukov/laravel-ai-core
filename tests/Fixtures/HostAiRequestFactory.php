@@ -6,6 +6,9 @@ namespace AlexPavliukov\AiCore\Tests\Fixtures;
 
 use AlexPavliukov\AiCore\Database\Factories\AiRequestFactory;
 
+/**
+ * @extends AiRequestFactory<HostAiRequest>
+ */
 final class HostAiRequestFactory extends AiRequestFactory
 {
     protected $model = HostAiRequest::class;

@@ -175,8 +175,12 @@ organization) no longer writes a `creating` hook:
 The package stamps the column only when the `requestable` relation is loaded, which
 `AiRequests::open()` always does, and takes the key **from the subject**, never from the
 session (a worker, the CLI or a platform admin has no current tenant, or another one).
-A loaded subject that does not implement the contract throws. Factories and seeders set
-the column themselves; the column is fillable while configured.
+A loaded subject that does not implement the contract throws. The stamp is registered in
+the model's `booting()`, before any trait of your subclass boots, so it runs before your
+tenant trait's own `creating` hook; if your subclass overrides `booting()`, call
+`parent::booting()`. Factory rows built with `forSubject($subject)` are stamped the same
+way; rows built with `for($subject, 'requestable')` are not (no relation is set), so pass
+the column yourself there. The column is fillable while configured.
 
 **Subclasses.** Point `ai-core.models.*` at your subclasses for tenant scoping, factories
 or display accessors. A tenant global scope or trait stays yours; the package touches no
@@ -223,7 +227,11 @@ $this->app->bind(SystemPrompts::class, EditableSystemPrompts::class);
   final: it accepts only a model from `ModelResolver::assignableModels($type)` (the
   catalogued models of enabled providers that can do everything the type requires) and
   hands it to `protected store()`, which throws until a subclass implements it. A
-  settings page offers `assignableModels($type)`. Where to store is the application's
+  settings page offers `assignableModels($type)`. `ModelResolver` is scoped to the
+  request and reads the enabled providers once; saving a provider or a model resets that
+  reading, so only a query-builder update of `is_active`, or a save under
+  `Event::fake()` in a test, needs `resolve(ModelResolver::class)->forgetProviders()`.
+  Laravel drops the reading between queued jobs and Octane requests. Where to store is the application's
   choice; the package ships no storage-backed implementation and depends on no storage
   package. An example over a settings store (`rawilk/laravel-settings`), **not part of
   the package**:
@@ -329,7 +337,10 @@ no events. Do not seed with `open()` + `record()` (that is the request path: it 
 `AiRequestDispatching` and `AiRequestCompleted`, so quotas and analytics react) and do not
 wrap a seeder in `Event::fakeFor()`. `record()` is for real calls made outside an agent.
 A subclass with its own factory (Laravel's naming convention) keeps it: extend
-`AlexPavliukov\AiCore\Database\Factories\AiRequestFactory` there and add your columns.
+`AlexPavliukov\AiCore\Database\Factories\AiRequestFactory` there and add your columns,
+declared as `@extends AiRequestFactory<YourAiRequest>` so the package states return your
+model to static analysis. With `subject_key.column` configured, build rows with
+`forSubject($subject)` rather than `for($subject, 'requestable')`.
 
 ---
 

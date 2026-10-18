@@ -6,6 +6,7 @@ namespace AlexPavliukov\AiCore\Testing;
 
 use AlexPavliukov\AiCore\Agents\AgentRegistry;
 use AlexPavliukov\AiCore\AiCore;
+use AlexPavliukov\AiCore\Catalog\ModelResolver;
 use AlexPavliukov\AiCore\Catalog\SyncAiCatalog;
 use AlexPavliukov\AiCore\Contracts\AiModelContract;
 use Closure;
@@ -29,9 +30,12 @@ trait InteractsWithAiCore
                 ->where('name', $activeModel->provider()->value)
                 ->update([
                     'is_active' => true,
-                    'active_model_id' => AiCore::modelModel()::query()->where('name', $activeModel->value)->value('id'),
+                    'active_model_id' => AiCore::modelModel()::query()->named($activeModel)->value('id'),
                 ]);
         }
+
+        // A bulk update fires no model events, and a test may fake events anyway.
+        resolve(ModelResolver::class)->forgetProviders();
     }
 
     /**

@@ -37,7 +37,7 @@ final class CapabilityAndResponseTest extends TestCase
 
         $this->assertSame(FakeModel::Small, $this->aiRequests()->textModel(FakeRequestType::Analysis, $this->subject()));
 
-        AiProvider::query()->where('name', 'openai')->update(['is_active' => false]);
+        AiProvider::query()->where('name', 'openai')->sole()->update(['is_active' => false]);
 
         $this->assertNull($this->aiRequests()->textModel(FakeRequestType::Analysis, $this->subject()));
         $this->assertNull($this->aiRequests()->modelFor(AiCapability::Transcription));

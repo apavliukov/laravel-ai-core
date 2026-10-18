@@ -185,15 +185,18 @@ For seeders and tests that need finished rows, `AiRequest::factory()` writes the
 shapes the executor writes, with no provider and no events:
 
 ```php
-AiRequest::factory()->for($subject, 'requestable')->forModel(AiModel::Mini)
+AiRequest::factory()->forSubject($subject)->forModel(AiModel::Mini)
     ->completed(['summary' => '...'], new TextUsage(1200, 300), $payload)->create();
 AiRequest::factory()->for($subject, 'requestable')->failed('Timed out.')->create();
 AiRequest::factory()->for($comment, 'requestable')->forModel(AiModel::Whisper)
     ->transcribed('Hello', new TranscriptionUsage(audioSeconds: 12.0))->create();
 ```
 
-A subclass that has its own factory (by Laravel's naming convention) keeps it; extend
-`AlexPavliukov\AiCore\Database\Factories\AiRequestFactory` there to inherit the states.
+`forSubject($subject)` sets the relation, so a configured `subject_key.column` is stamped
+as for a real request; `for($subject, 'requestable')` sets only the morph columns. A
+subclass that has its own factory (by Laravel's naming convention) keeps it; extend
+`AlexPavliukov\AiCore\Database\Factories\AiRequestFactory` there, declared as
+`@extends AiRequestFactory<YourAiRequest>`, to inherit the states.
 
 ## License
 

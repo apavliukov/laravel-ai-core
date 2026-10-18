@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AlexPavliukov\AiCore\Tests\Feature;
 
+use AlexPavliukov\AiCore\AiCore;
 use AlexPavliukov\AiCore\AiRequests;
 use AlexPavliukov\AiCore\Catalog\ModelAssignments;
 use AlexPavliukov\AiCore\Catalog\ModelResolver;
@@ -15,6 +16,8 @@ use AlexPavliukov\AiCore\Events\AiRequestFailed;
 use AlexPavliukov\AiCore\Exceptions\AiMisconfiguredException;
 use AlexPavliukov\AiCore\Exceptions\AiRequestRejectedException;
 use AlexPavliukov\AiCore\Execution\AiRequestExecutor;
+use AlexPavliukov\AiCore\Models\AiModel;
+use AlexPavliukov\AiCore\Models\AiProvider;
 use AlexPavliukov\AiCore\Models\AiRequest;
 use AlexPavliukov\AiCore\Tests\Fixtures\CannedAgent;
 use AlexPavliukov\AiCore\Tests\Fixtures\FakeAgent;
@@ -23,8 +26,10 @@ use AlexPavliukov\AiCore\Tests\Fixtures\FakeRequestType;
 use AlexPavliukov\AiCore\Tests\Fixtures\HostAiRequest;
 use AlexPavliukov\AiCore\Tests\Fixtures\HostAiRequestFactory;
 use AlexPavliukov\AiCore\Tests\Fixtures\OwnedSubject;
+use AlexPavliukov\AiCore\Tests\Fixtures\TenantAiRequest;
 use AlexPavliukov\AiCore\Tests\TestCase;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Exceptions;
 use InvalidArgumentException;
@@ -152,6 +157,65 @@ final class HostExtensionsTest extends TestCase
         } finally {
             Factory::flushState();
         }
+    }
+
+    public function test_the_subject_key_is_stamped_before_a_host_trait_hook_runs(): void
+    {
+        config(['ai-core.subject_key.column' => 'custom_prompt', 'ai-core.models.request' => TenantAiRequest::class]);
+        $this->seedAiCatalog(FakeModel::Small);
+        TenantAiRequest::$seenOnCreating = 'not run';
+
+        $this->aiRequests()->open(OwnedSubject::query()->create(), FakeModel::Small, FakeRequestType::Analysis);
+
+        $this->assertSame('owner-42', TenantAiRequest::$seenOnCreating);
+    }
+
+    public function test_a_factory_row_for_a_subject_is_stamped_like_a_request(): void
+    {
+        config(['ai-core.subject_key.column' => 'custom_prompt']);
+        $this->seedAiCatalog(FakeModel::Small);
+
+        $row = AiRequest::factory()->forSubject(OwnedSubject::query()->create())->create();
+
+        $this->assertSame('owner-42', $row->refresh()->custom_prompt);
+    }
+
+    public function test_the_enabled_providers_are_read_once_per_request_until_one_is_saved(): void
+    {
+        $this->seedAiCatalog(FakeModel::Small);
+        DB::enableQueryLog();
+
+        resolve(ModelResolver::class)->assignableModels(FakeRequestType::Analysis);
+        resolve(ModelResolver::class)->assignableModels(FakeRequestType::Search);
+        $this->assertCount(1, $this->queriesOn(AiCore::table('providers')));
+
+        AiProvider::query()->where('name', 'openai')->sole()->update(['is_active' => false]);
+        $this->assertSame([], resolve(ModelResolver::class)->assignableModels(FakeRequestType::Analysis));
+    }
+
+    public function test_a_factory_row_looks_its_model_up_once_and_needs_a_seeded_catalogue(): void
+    {
+        $this->seedAiCatalog(FakeModel::Small);
+        DB::enableQueryLog();
+
+        AiRequest::factory()->count(3)->for($this->subject(), 'requestable')->forModel(FakeModel::Small)->completed('Done.', new TextUsage)->create();
+
+        $this->assertCount(3, $this->queriesOn(AiCore::table('models')));
+
+        AiModel::query()->named(FakeModel::Large)->delete();
+        $this->expectException(LogicException::class);
+        AiRequest::factory()->for($this->subject(), 'requestable')->forModel(FakeModel::Large)->make();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function queriesOn(string $table): array
+    {
+        return array_values(array_filter(
+            array_map(static fn (array $query): string => (string) $query['query'], DB::getQueryLog()),
+            static fn (string $sql): bool => str_starts_with($sql, 'select') && str_contains($sql, "from \"{$table}\""),
+        ));
     }
 
     private function aiRequests(): AiRequests

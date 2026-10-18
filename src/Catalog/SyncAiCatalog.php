@@ -24,6 +24,8 @@ final readonly class SyncAiCatalog
         $this->syncProviders();
         $this->syncModels();
         $this->replaceRetiredActiveModels();
+
+        resolve(ModelResolver::class)->forgetProviders();
     }
 
     private function syncProviders(): void
@@ -87,7 +89,7 @@ final readonly class SyncAiCatalog
             $default = $provider->getEnum()?->defaultModel();
 
             $provider->update([
-                'active_model_id' => AiCore::modelModel()::query()->where('name', $default?->value)->value('id'),
+                'active_model_id' => $default === null ? null : AiCore::modelModel()::query()->named($default)->value('id'),
             ]);
         }
     }

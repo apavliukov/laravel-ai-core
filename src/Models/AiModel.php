@@ -8,6 +8,8 @@ use AlexPavliukov\AiCore\AiCore;
 use AlexPavliukov\AiCore\Contracts\AiModelContract;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -45,6 +47,16 @@ class AiModel extends Model
     {
         /** @var BelongsTo<AiProvider, $this> */
         return $this->belongsTo(AiCore::providerModel(), 'ai_provider_id')->withTrashed();
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    #[Scope]
+    protected function named(Builder $query, AiModelContract $model): Builder
+    {
+        return $query->where('name', $model->value);
     }
 
     public function getEnum(): ?AiModelContract

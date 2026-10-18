@@ -129,10 +129,7 @@ final readonly class AiRequests
 
         event(new AiRequestDispatching($requestable, $requestType, $model, $userId));
 
-        $aiModelId = AiCore::modelModel()::query()
-            ->where('name', $model->value)
-            ->firstOrFail()
-            ->getKey();
+        $aiModelId = AiCore::modelModel()::query()->named($model)->firstOrFail()->getKey();
 
         $requestModel = AiCore::requestModel();
         $aiRequest = new $requestModel;

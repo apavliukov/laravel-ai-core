@@ -9,7 +9,6 @@ use AlexPavliukov\AiCore\Contracts\AiRequestable;
 use AlexPavliukov\AiCore\Contracts\AiRequestTypeContract;
 use AlexPavliukov\AiCore\Database\Factories\AiRequestFactory;
 use AlexPavliukov\AiCore\Enums\ProcessStatus;
-use Illuminate\Database\Eloquent\Attributes\Boot;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Initialize;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -65,8 +64,10 @@ use InvalidArgumentException;
 ])]
 class AiRequest extends Model
 {
-    /** @use HasFactory<AiRequestFactory> */
-    use HasFactory;
+    /** @use HasFactory<AiRequestFactory<static>> */
+    use HasFactory {
+        newFactory as protected declaredFactory;
+    }
 
     /**
      * @param  array<string, mixed>  $attributes
@@ -80,13 +81,18 @@ class AiRequest extends Model
 
     /**
      * Stamps the configured subject key from the subject on a row being
-     * created, when the subject is loaded (AiRequests::open() sets it). The
-     * subject decides, not the session: a worker, the CLI or a platform admin
-     * has no current tenant, or another one.
+     * created, when the subject is loaded (AiRequests::open() and the factory's
+     * forSubject() set it). The subject decides, not the session: a worker, the
+     * CLI or a platform admin has no current tenant, or another one.
+     *
+     * Registered in booting(), before any trait of a subclass boots, so the
+     * stamp runs before a tenant trait's own creating hook. A subclass that
+     * overrides booting() calls parent::booting().
      */
-    #[Boot]
-    public static function stampSubjectKey(): void
+    protected static function booting(): void
     {
+        parent::booting();
+
         static::creating(static function (self $aiRequest): void {
             $column = AiCore::subjectKeyColumn();
 
@@ -200,19 +206,29 @@ class AiRequest extends Model
     }
 
     /**
-     * The package factory, unless the host's subclass has its own factory by
-     * Laravel's naming convention: then that one, so a host's tenant columns
-     * and states are never swapped for the package's.
+     * The subclass's declared factory ($factory, #[UseFactory]), else its own
+     * factory by Laravel's naming convention, else the package factory: a host's
+     * tenant columns and states are never swapped for the package's.
      *
-     * @return Factory<static>|null
+     * Untyped like HasFactory::newFactory(): a subclass that uses HasFactory again
+     * gets the trait's method, which must stay compatible with this one.
+     *
+     * @return AiRequestFactory<static>|null
      */
-    protected static function newFactory(): ?Factory
+    protected static function newFactory()
     {
+        // A subclass's static $factory or #[UseFactory] wins, as with HasFactory.
+        $declared = static::declaredFactory();
+
+        if ($declared !== null) {
+            return $declared;
+        }
+
         if (static::class !== self::class && class_exists(Factory::resolveFactoryName(static::class))) {
             return null;
         }
 
-        /** @var Factory<static> */
+        /** @var AiRequestFactory<static> */
         return AiRequestFactory::new();
     }
 

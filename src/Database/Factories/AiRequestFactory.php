@@ -6,11 +6,13 @@ namespace AlexPavliukov\AiCore\Database\Factories;
 
 use AlexPavliukov\AiCore\AiCore;
 use AlexPavliukov\AiCore\Contracts\AiModelContract;
+use AlexPavliukov\AiCore\Contracts\AiRequestable;
 use AlexPavliukov\AiCore\Enums\ProcessStatus;
 use AlexPavliukov\AiCore\Execution\AiCost;
 use AlexPavliukov\AiCore\Models\AiRequest;
 use Closure;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\Data\TranscriptionUsage;
@@ -22,7 +24,9 @@ use LogicException;
  * a seeded row as a request. Needs no Faker. A host's factory for its own
  * subclass extends this one and adds its columns (subject key, tenant).
  *
- * @extends Factory<AiRequest>
+ * @template TModel of AiRequest
+ *
+ * @extends Factory<TModel>
  */
 class AiRequestFactory extends Factory
 {
@@ -30,10 +34,11 @@ class AiRequestFactory extends Factory
      * The configured request model; a host's factory that names its own model
      * keeps it.
      *
-     * @return class-string<AiRequest>
+     * @return class-string<TModel>
      */
     public function modelName(): string
     {
+        /** @var class-string<TModel> */
         return static::class === self::class ? AiCore::requestModel() : parent::modelName();
     }
 
@@ -59,7 +64,7 @@ class AiRequestFactory extends Factory
      */
     public function forModel(AiModelContract $model): static
     {
-        return $this->state(['ai_model_id' => static fn (): mixed => AiCore::modelModel()::query()->where('name', $model->value)->value('id')]);
+        return $this->state(['ai_model_id' => new CatalogueModelId($model)]);
     }
 
     /**
@@ -106,6 +111,19 @@ class AiRequestFactory extends Factory
         ]);
     }
 
+    /**
+     * for($subject, 'requestable') plus the relation, so a configured subject
+     * key column is stamped from it as for a real request.
+     */
+    public function forSubject(AiRequestable&Model $subject): static
+    {
+        return $this
+            ->for($subject, 'requestable')
+            ->afterMaking(static function (AiRequest $aiRequest) use ($subject): void {
+                $aiRequest->setRelation('requestable', $subject);
+            });
+    }
+
     public function failed(string $error): static
     {
         return $this->state([
@@ -120,6 +138,11 @@ class AiRequestFactory extends Factory
     private function catalogueModel(array $attributes): AiModelContract
     {
         $id = $attributes['ai_model_id'] ?? null;
+
+        if ($id instanceof CatalogueModelId) {
+            return $id->model;
+        }
+
         $id = $id instanceof Closure ? $id() : $id;
 
         return AiCore::modelModel()::query()->whereKey($id)->first()?->enumOrFallback()

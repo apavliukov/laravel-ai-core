@@ -157,6 +157,10 @@ final readonly class ApplySummary implements AppliesAiResult
   (`AiMisconfiguredException`) a model outside that list; null or `''` clears.
 - The application's subclass implements `assigned()` and `protected store()`; never
   override `assign()`.
+- `ModelResolver` is scoped to the request and reads the enabled providers once; saving a
+  provider or a model resets that. Toggle `is_active` with `$provider->update()`; after a
+  query-builder update, or a save under `Event::fake()` in a test, call
+  `resolve(ModelResolver::class)->forgetProviders()`.
 
 ## Errors
 
@@ -196,9 +200,10 @@ Queue::fake(); Queue::assertPushed(ProcessAiRequestJob::class);
   truncation or web search counting, give the executor a stub agent whose `prompt()`
   returns a built `AgentResponse`.
 - Expect `The AI request failed (ref #id).` in `error_message` for non-provider failures.
-- Finished rows for seeders/tests: `AiRequest::factory()->for($subject, 'requestable')
+- Finished rows for seeders/tests: `AiRequest::factory()->forSubject($subject)
   ->forModel($model)->completed($answer, $usage, $payload)` / `->failed($error)` /
-  `->transcribed($text, $usage)` — no provider, no events.
+  `->transcribed($text, $usage)` — no provider, no events. `forSubject()` stamps the
+  configured subject key; `for($subject, 'requestable')` does not.
 
 ## Never
 

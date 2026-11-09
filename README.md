@@ -1,3 +1,7 @@
+[![tests](https://github.com/apavliukov/laravel-ai-core/actions/workflows/tests.yml/badge.svg)](https://github.com/apavliukov/laravel-ai-core/actions/workflows/tests.yml)
+[![Latest Version](https://img.shields.io/packagist/v/apavliukov/laravel-ai-core.svg)](https://packagist.org/packages/apavliukov/laravel-ai-core)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 # Laravel AI Core
 
 The shared AI layer above [laravel/ai](https://github.com/laravel/ai): a model catalogue
@@ -10,6 +14,12 @@ ledger. Your application keeps what is genuinely its own: the provider, model an
 request-type enums, the agents, the actions that build prompts, the UI, and tenancy.
 
 Moving an existing application onto the package? Read [docs/ADOPTION.md](docs/ADOPTION.md).
+
+## Why
+
+- One place to see what every LLM call cost, who triggered it and whether it succeeded — the `ai_requests` ledger.
+- Provider outages don't break features: routing follows a priority list of enabled providers.
+- The same package serves several apps, so prompts and agents stay in the app while execution, pricing and batching are shared.
 
 ## Requirements
 
